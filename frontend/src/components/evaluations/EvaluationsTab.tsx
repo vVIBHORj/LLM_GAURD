@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { EvaluationRun, Dataset } from '../../types';
 
 interface EvaluationsTabProps {
@@ -16,9 +16,15 @@ export const EvaluationsTab: React.FC<EvaluationsTabProps> = ({
   onSubmitEval,
   loading,
 }) => {
-  const [selectedDataset, setSelectedDataset] = useState<string>(
-    datasets[0]?.id || 'promptfoo-rigorous-suite'
-  );
+  // Start with empty string; populate once datasets load from API
+  const [selectedDataset, setSelectedDataset] = useState<string>('');
+
+  // Auto-select first dataset when datasets array populates
+  useEffect(() => {
+    if (datasets.length > 0 && !selectedDataset) {
+      setSelectedDataset(datasets[0].id);
+    }
+  }, [datasets, selectedDataset]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -43,7 +49,7 @@ export const EvaluationsTab: React.FC<EvaluationsTabProps> = ({
 
             <button
               onClick={() => onSubmitEval(selectedDataset, selectedModel)}
-              disabled={loading}
+              disabled={loading || !selectedDataset}
               className="island-btn bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50 group font-bold shadow-glow-cyan"
             >
               <span>{loading ? 'Submitting to Queue...' : 'Enqueue Evaluation'}</span>
@@ -69,7 +75,7 @@ export const EvaluationsTab: React.FC<EvaluationsTabProps> = ({
                       : 'bg-white/[0.03] text-gray-400 hover:text-gray-200 ring-1 ring-white/5'
                   }`}
                 >
-                  {d.name} ({d.test_cases_count || 12} Tests)
+                  {d.name} ({d.test_case_count ?? 0} Tests)
                 </button>
               ))}
             </div>
@@ -127,39 +133,64 @@ export const EvaluationsTab: React.FC<EvaluationsTabProps> = ({
                   <th className="py-2.5">RUN ID</th>
                   <th>MODEL</th>
                   <th>STATUS</th>
-                  <th>ACCURACY</th>
                   <th>PASSED / TOTAL</th>
-                  <th>LATENCY</th>
                   <th>THROUGHPUT</th>
+                  <th>VRAM PEAK</th>
+                  <th>STARTED</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.04]">
                 {evaluations.length > 0 ? (
-                  evaluations.map((ev) => (
-                    <tr key={ev.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="py-3 text-cyan-400 font-semibold">{ev.id}</td>
-                      <td className="text-gray-200">{ev.model_id}</td>
-                      <td>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] ring-1 ${
-                          ev.status === 'COMPLETED'
-                            ? 'text-cyber-emerald bg-cyber-emerald/10 ring-cyber-emerald/30'
-                            : ev.status === 'RUNNING'
-                            ? 'text-cyan-400 bg-cyan-500/10 ring-cyan-500/30 animate-pulse'
-                            : 'text-gray-400 bg-white/5 ring-white/10'
-                        }`}>
-                          ● {ev.status}
-                        </span>
-                      </td>
-                      <td className="text-emerald-400 font-bold">
-                        {(ev.accuracy_rate * 100).toFixed(0)}%
-                      </td>
-                      <td className="text-gray-300">
-                        {ev.passed_tests} / {ev.total_tests}
-                      </td>
-                      <td className="text-gray-400">{ev.avg_latency_ms.toFixed(0)} ms</td>
-                      <td className="text-cyan-400">{ev.tokens_per_sec.toFixed(1)} t/s</td>
-                    </tr>
-                  ))
+                  evaluations.map((ev) => {
+                    const passed = ev.progress?.passed_tests ?? 0;
+                    const total = ev.progress?.total_tests ?? 0;
+                    const accuracy = total > 0 ? Math.round((passed / total) * 100) : null;
+                    return (
+                      <tr key={ev.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="py-3 text-cyan-400 font-semibold">{ev.id.slice(0, 8)}…</td>
+                        <td className="text-gray-200">{ev.model_id}</td>
+                        <td>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] ring-1 ${
+                            ev.status === 'COMPLETED'
+                              ? 'text-cyber-emerald bg-cyber-emerald/10 ring-cyber-emerald/30'
+                              : ev.status === 'RUNNING'
+                              ? 'text-cyan-400 bg-cyan-500/10 ring-cyan-500/30 animate-pulse'
+                              : ev.status === 'FAILED'
+                              ? 'text-red-400 bg-red-500/10 ring-red-500/30'
+                              : 'text-gray-400 bg-white/5 ring-white/10'
+                          }`}>
+                            ● {ev.status}
+                          </span>
+                        </td>
+                        <td className="text-gray-300">
+                          {total > 0 ? (
+                            <span>
+                              <span className="text-emerald-400 font-bold">{passed}</span>
+                              {accuracy !== null && <span className="text-gray-500 ml-1">({accuracy}%)</span>}
+                              <span className="text-gray-500"> / {total}</span>
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 italic">pending</span>
+                          )}
+                        </td>
+                        <td className="text-cyan-400">
+                          {ev.tokens_per_second_avg != null
+                            ? `${ev.tokens_per_second_avg.toFixed(1)} t/s`
+                            : <span className="text-gray-600">—</span>}
+                        </td>
+                        <td className="text-gray-400">
+                          {ev.peak_vram_mb != null
+                            ? `${ev.peak_vram_mb.toFixed(0)} MB`
+                            : <span className="text-gray-600">—</span>}
+                        </td>
+                        <td className="text-gray-500">
+                          {ev.started_at
+                            ? new Date(ev.started_at).toLocaleTimeString()
+                            : new Date(ev.created_at).toLocaleTimeString()}
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-gray-500 italic">

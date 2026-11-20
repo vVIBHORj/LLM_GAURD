@@ -116,27 +116,35 @@ export interface ModelRanking {
   vram_used_mb: number;
 }
 
-export interface EvaluationRun {
-  id: string;
-  dataset_id: string;
-  model_id: string;
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+export interface RunProgress {
   total_tests: number;
+  completed_tests: number;
   passed_tests: number;
   failed_tests: number;
-  accuracy_rate: number;
-  avg_latency_ms: number;
-  tokens_per_sec: number;
-  created_at: string;
-  completed_at?: string;
+}
+
+export interface EvaluationRun {
+  id: string;
+  experiment_id?: string;
+  model_id: string;
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  total_duration_seconds?: number;
+  tokens_per_second_avg?: number;
+  peak_vram_mb?: number;
+  peak_ram_mb?: number;
   error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  progress?: RunProgress;
 }
 
 export interface Dataset {
   id: string;
   name: string;
   description?: string;
-  category: string;
-  test_cases_count?: number;
+  task_type: string;
+  version: number;
+  test_case_count: number;
   created_at: string;
 }
