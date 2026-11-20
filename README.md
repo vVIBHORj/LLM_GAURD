@@ -1,0 +1,242 @@
+# LocalLLM Guard 🛡️
+
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
+[![SQLite WAL](https://img.shields.io/badge/SQLite-WAL%20Mode-003B57.svg)](https://www.sqlite.org/wal.html)
+[![Promptfoo](https://img.shields.io/badge/Promptfoo-v0.126-orange.svg)](https://www.promptfoo.dev/)
+[![Ollama](https://img.shields.io/badge/Ollama-Local%20Inference-black.svg)](https://ollama.com/)
+[![Tests](https://img.shields.io/badge/Tests-22%20Passing-brightgreen.svg)]()
+[![Hardware Verified](https://img.shields.io/badge/Hardware-RTX%203050%20(4GB)-76B900.svg)](https://www.nvidia.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+**LocalLLM Guard** is a local-first LLM evaluation, benchmarking, reliability, and adversarial security testing platform. It provides enterprise-grade LLM evaluation on commodity workstation and laptop hardware with **100% data privacy, zero external cloud dependencies, and zero token costs**.
+
+Designed, calibrated, and empirically benchmarked on **Intel Core i7-12700H**, **NVIDIA GeForce RTX 3050 Laptop GPU (4GB VRAM)**, and **16GB System RAM**.
+
+---
+
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    subgraph UI ["Client & Dashboard Layer"]
+        Dashboard["FastAPI Embedded Dashboard (:8000/dashboard)"]
+        ReactApp["React 19 + TypeScript + Vite (/frontend)"]
+    end
+
+    subgraph API ["Application Gateway (FastAPI)"]
+        Router["REST Endpoints (/api/v1/*)"]
+        Queue["Async Sequential Priority Queue"]
+        Worker["In-Process Execution Worker"]
+        Gate["Pre-Flight Hardware Gate (RAM >= 1.5GB)"]
+        Router --> Queue --> Worker --> Gate
+    end
+
+    subgraph Core ["Local Inference & Orchestration"]
+        Ollama["Ollama Engine (:11434 IPv4)<br/>(Model Switch: keep_alive = 0)"]
+        Promptfoo["Promptfoo CLI (Managed Subprocess)<br/>(Schema-validated YAML generator)"]
+        Gate --> Promptfoo --> Ollama
+        Gate -->|Unload Protocol| Ollama
+    end
+
+    subgraph Storage ["Hybrid Storage Layer"]
+        DB[("SQLite 3 (WAL Mode)<br/>10 Relational Tables")]
+        JSONL["Append-Only JSONL Files (/data/runs/*.jsonl)<br/>Raw Prompts, Completions, Traces"]
+        Configs["Ephemeral Configs (/data/configs/*.yaml)"]
+    end
+
+    Router --> DB
+    Worker --> JSONL
+    Promptfoo --> Configs
+    Dashboard <--> Router
+    ReactApp <--> Router
+```
+
+---
+
+## Key Capabilities
+
+### 1. Hardware-Aware Sequential Execution Queue
+- **Single-Model Residency:** Prevents multi-model memory collisions on 4GB GPUs by enforcing serial model execution.
+- **Pre-Flight Memory Gate:** Real-time RAM threshold checking (minimum 1.5GB free memory buffer required) and VRAM monitoring before launching expensive benchmarks.
+- **Model Switch Unload Protocol:** Automatically issues `POST /api/generate` with `keep_alive: 0` to flush resident weights from VRAM before warming up a different model.
+
+### 2. Controlled Promptfoo Subprocess Orchestration
+- Programmatically generates schema-validated Promptfoo YAML files in `/data/configs/`.
+- Explicitly binds providers to IPv4: `host: "http://127.0.0.1:11434"` (preventing Node.js IPv6 `::1` connection drops on Windows).
+- Manages execution timeouts, process tree termination, and output sanitization.
+
+### 3. Adversarial Security & Red-Teaming Scanner
+Standardized automated test suites detecting:
+- **Direct Prompt Injection:** Instruction overrides & system prompt extraction probes.
+- **Jailbreak Bypasses:** Fictional scenario framing & roleplay bypass attempts.
+- **Sensitive Data Leakage:** PII harvesting & API credential elicitation.
+- **Instruction Boundary Integrity:** Context document attacks impersonating administrative instructions.
+- Automated vulnerability scorecard generation (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`).
+
+### 4. RAG Triad Reliability Engine
+- Local document chunking with configurable sliding windows.
+- Vector embedding generation via local models (`qwen3-embedding:0.6b` / `mxbai-embed-large:latest`).
+- Cosine similarity retrieval with grounded question answering.
+- Automatic scoring across the **RAG Triad**:
+  - **Context Relevance:** Similarity between user query and retrieved context chunk.
+  - **Answer Faithfulness:** Groundedness/containment of model response in context.
+  - **Answer Relevance:** Semantic alignment between answer and user intent.
+
+### 5. Multi-Model Benchmarks & Pareto Frontier
+- Runs identical test datasets across multiple models sequentially.
+- Mathematically computes **Pareto-Optimal Models** (non-dominated trade-offs between throughput in tokens/sec and accuracy rate).
+
+### 6. Hybrid Storage Architecture
+- **SQLite (WAL Mode):** Stores relational entities, configurations, execution runs, and scalar metrics with zero lock contention.
+- **Append-Only JSONL:** Detailed prompt inputs, model completions, reasoning traces (`<think>...</think>`), and raw assertion evaluations are streamed into `/data/runs/{run_id}.jsonl`.
+
+### 7. Dark-First Infrastructure Dashboard
+- **Embedded Web Dashboard:** Served directly by FastAPI at `http://127.0.0.1:8000/dashboard`.
+- Real-time CPU, RAM, and NVIDIA GPU VRAM progress meters.
+- Model registry explorer with one-click Ollama sync.
+- Interactive Red-Teaming scanner and RAG Triad visualizer.
+
+---
+
+## Hardware Benchmarks (Empirically Verified)
+
+Tested on **Intel i7-12700H** + **NVIDIA RTX 3050 Laptop GPU (4GB VRAM)**:
+
+| Model | Parameter Size | Disk Size | VRAM Usage | Throughput | Hardware Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`llama3.2:latest`** | 3B | 2.0 GB | ~2.2 GB | **109.3 t/s** | Fully in VRAM (Fastest) |
+| **`qwen2.5:3b`** | 3B | 1.9 GB | ~2.0 GB | **55.0 t/s** | Fully in VRAM |
+| **`qwen3:4b`** | 4B | 2.5 GB | ~2.2 GB | **41.9 t/s** | Partial offload (~1.1GB RAM) |
+| **`qwen3:8b`** | 8B | 5.2 GB | ~2.2 GB | **14.7 t/s** | Partial offload (~3.5GB RAM) |
+| **`qwen3:1.7b`** | 1.7B | 1.4 GB | ~1.6 GB | **70.0 t/s** | Fully in VRAM (Compact) |
+| **`qwen3-embedding:0.6b`** | 0.6B | 639 MB | Full GPU | **1024-dim** | Instantaneous |
+| **`mxbai-embed-large:latest`** | Large | 669 MB | Full GPU | **1024-dim** | Instantaneous |
+
+---
+
+## Project Structure
+
+```text
+LocalLLM-Guard/
+├── backend/
+│   ├── app/
+│   │   ├── api/v1/
+│   │   │   ├── endpoints/
+│   │   │   │   ├── health.py        # System health, Ollama & Promptfoo status
+│   │   │   │   ├── models.py        # Model discovery & registry sync
+│   │   │   │   ├── monitoring.py    # Instantaneous CPU, RAM, GPU/VRAM telemetry
+│   │   │   │   ├── datasets.py      # Evaluation dataset & test case CRUD
+│   │   │   │   ├── evaluations.py   # Run submission (202), progress, JSONL results
+│   │   │   │   ├── benchmarks.py    # Multi-model comparisons & Pareto frontier
+│   │   │   │   ├── security.py      # Adversarial red-teaming scanner
+│   │   │   │   ├── rag.py           # RAG Triad evaluation pipeline
+│   │   │   │   └── analytics.py     # Composite score rankings & model recommender
+│   │   │   └── api.py               # API v1 router aggregation
+│   │   ├── core/
+│   │   │   ├── exceptions.py        # Custom exception classes
+│   │   │   ├── hardware_gate.py     # Pre-flight RAM/VRAM resource validation
+│   │   │   └── queue.py             # Async in-process sequential priority queue
+│   │   ├── db/
+│   │   │   ├── models/              # SQLAlchemy 2.0 ORM models
+│   │   │   ├── base.py              # DeclarativeBase
+│   │   │   └── session.py           # SQLite engine with PRAGMA journal_mode=WAL
+│   │   ├── schemas/                 # Pydantic v2 validation contracts
+│   │   ├── services/
+│   │   │   ├── ollama_service.py    # Async HTTP client for Ollama API (:11434)
+│   │   │   ├── promptfoo_service.py # Subprocess execution & YAML compilation
+│   │   │   ├── result_parser.py     # Output JSON normalizer & JSONL streamer
+│   │   │   ├── hardware_monitor.py  # psutil + torch.cuda memory sampler
+│   │   │   ├── jsonl_storage.py     # Append-only file storage service
+│   │   │   ├── security_service.py  # Attack vectors & defense evaluator
+│   │   │   ├── rag_service.py       # Chunking, embeddings & RAG triad scoring
+│   │   │   ├── benchmark_service.py # Multi-model Pareto frontier calculator
+│   │   │   └── analytics_service.py # Weighted composite score rankings
+│   │   ├── static/
+│   │   │   └── dashboard.html       # Self-contained dark-theme interactive dashboard
+│   │   ├── workers/
+│   │   │   └── execution_worker.py  # Sequential background worker daemon
+│   │   ├── config.py                # Pydantic BaseSettings (.env loader)
+│   │   └── main.py                  # FastAPI factory & lifespan event manager
+│   └── tests/                       # 22 automated unit & integration tests
+│
+├── frontend/                        # Complete React + TypeScript + Vite + Tailwind source
+├── data/                            # Local database, configs, and JSONL traces (git-ignored)
+│   ├── configs/                     # Ephemeral Promptfoo YAML configurations
+│   ├── runs/                        # Detailed test execution JSONL traces
+│   └── rag_docs/                    # Reference documents for RAG tests
+│
+├── .env.example                     # Environment configuration template
+├── .gitignore                       # Git ignore rules
+├── pytest.ini                       # Test suite runner settings
+└── README.md                        # Documentation
+```
+
+---
+
+## Quickstart
+
+### Prerequisites
+- Windows 10/11 (or Linux/macOS)
+- Python 3.12+
+- Ollama installed & running (`ollama serve`)
+- Promptfoo installed globally (`npm install -g promptfoo`)
+
+### 1. Clone & Configure
+```powershell
+git clone https://github.com/vVIBHORj/LLM_GAURD.git
+cd LLM_GAURD
+cp .env.example .env
+```
+
+### 2. Run the Platform Backend
+```powershell
+python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### 3. Open the Interactive Dashboard
+Launch your web browser to:
+- **Interactive Dashboard:** [http://127.0.0.1:8000/dashboard](http://127.0.0.1:8000/dashboard)
+- **Interactive Swagger API Docs:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+
+### 4. Run the Automated Test Suite
+```powershell
+python -m pytest -v
+```
+
+### 5. Optional: Run Frontend Dev Server
+If modifying the React/TypeScript frontend source directly:
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## API Reference Summary
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/health` | Comprehensive system, Ollama, Promptfoo & hardware health |
+| `GET` | `/api/v1/monitoring/telemetry` | Real-time CPU, RAM, and GPU VRAM telemetry |
+| `GET` | `/api/v1/models` | List all models registered in the database |
+| `POST` | `/api/v1/models/sync` | Discover and synchronize local Ollama models into database |
+| `GET` | `/api/v1/datasets` | List evaluation datasets with test case counts |
+| `POST` | `/api/v1/datasets` | Create evaluation dataset with inline test cases |
+| `POST` | `/api/v1/evaluations` | Enqueue evaluation run into the sequential queue (HTTP 202) |
+| `GET` | `/api/v1/evaluations/{id}` | Get evaluation run progress, status, and summary metrics |
+| `GET` | `/api/v1/evaluations/{id}/results` | Paginated test results enriched with JSONL raw outputs |
+| `POST` | `/api/v1/benchmarks` | Create multi-model comparative benchmark report |
+| `GET` | `/api/v1/benchmarks/{id}` | Get benchmark comparison matrix & Pareto points |
+| `GET` | `/api/v1/security/vectors` | List active adversarial red-teaming attack vectors |
+| `POST` | `/api/v1/security/scan` | Execute automated adversarial security evaluation on a model |
+| `POST` | `/api/v1/rag/evaluate` | Execute RAG Triad evaluation workflow (Context, Groundedness, Relevance) |
+| `GET` | `/api/v1/analytics/rankings` | Calculate weighted composite model rankings |
+| `POST` | `/api/v1/analytics/recommend` | Model recommendation assistant matching hardware constraints |
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
