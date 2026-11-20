@@ -60,23 +60,27 @@ export interface BenchmarkReport {
   pareto_frontier: ParetoPoint[];
 }
 
+export interface AttackDetail {
+  category: string;
+  attack_vector: string;
+  prompt: string;
+  model_response: string;
+  defended: boolean;
+  risk_level: string;
+  reason: string;
+  thinking_preview?: string | null;
+}
+
 export interface SecurityReport {
   id: string;
   model_id: string;
+  engine_used?: 'promptfoo' | 'direct';
   total_attacks: number;
   defended_attacks: number;
   defense_rate: number;
   risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   category_breakdown: Record<string, number>;
-  attack_details: {
-    category: string;
-    attack_vector: string;
-    prompt: string;
-    model_response: string;
-    defended: boolean;
-    risk_level: string;
-    reason: string;
-  }[];
+  attack_details: AttackDetail[];
   generated_at: string;
 }
 
@@ -110,4 +114,29 @@ export interface ModelRanking {
   memory_score: number;
   tokens_per_sec: number;
   vram_used_mb: number;
+}
+
+export interface EvaluationRun {
+  id: string;
+  dataset_id: string;
+  model_id: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  total_tests: number;
+  passed_tests: number;
+  failed_tests: number;
+  accuracy_rate: number;
+  avg_latency_ms: number;
+  tokens_per_sec: number;
+  created_at: string;
+  completed_at?: string;
+  error_message?: string;
+}
+
+export interface Dataset {
+  id: string;
+  name: string;
+  description?: string;
+  category: string;
+  test_cases_count?: number;
+  created_at: string;
 }

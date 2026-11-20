@@ -1,87 +1,142 @@
 import React from 'react';
+import { Telemetry } from '../../types';
 
 interface TelemetryProps {
-  telemetry: any;
+  telemetry: Telemetry | null;
 }
 
 export const TelemetryGauges: React.FC<TelemetryProps> = ({ telemetry }) => {
-  if (!telemetry) return null;
+  if (!telemetry) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-pulse">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="doppelrand-shell">
+            <div className="doppelrand-core p-4 h-24 bg-oled-850/50" />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   const ramUsed = telemetry.ram?.used_percent || 0;
   const vramUsed = telemetry.gpu?.vram_usage_percent || 0;
   const cpuUsed = telemetry.cpu?.usage_percent || 0;
   const safety = telemetry.hardware_safety_status || 'SAFE';
 
-  const safetyColor =
-    safety === 'SAFE' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
-    safety === 'WARNING' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
-    'text-rose-400 bg-rose-500/10 border-rose-500/20';
+  const safetyStyle =
+    safety === 'SAFE'
+      ? { badge: 'text-cyber-emerald bg-cyber-emerald/10 ring-cyber-emerald/30', glow: 'shadow-glow-emerald', label: 'READY' }
+      : safety === 'WARNING'
+      ? { badge: 'text-cyber-amber bg-cyber-amber/10 ring-cyber-amber/30', glow: '', label: 'WARNING' }
+      : { badge: 'text-cyber-rose bg-cyber-rose/10 ring-cyber-rose/30', glow: 'shadow-glow-rose', label: 'THROTTLED' };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-[#111827] border border-[#1F2937] rounded-xl shadow-lg">
-      {/* CPU Gauge */}
-      <div className="flex flex-col">
-        <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
-          <span className="font-medium tracking-wide">CPU UTILIZATION</span>
-          <span className="font-mono text-gray-200">{cpuUsed.toFixed(1)}%</span>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 1. CPU Utilization */}
+      <div className="doppelrand-shell group">
+        <div className="doppelrand-core p-4 flex flex-col justify-between h-full">
+          <div>
+            <div className="flex justify-between items-center text-[11px] font-mono tracking-wider text-gray-400">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyber-cyan animate-pulse" />
+                CPU COMPUTE
+              </span>
+              <span className="text-gray-200 font-semibold">{cpuUsed.toFixed(1)}%</span>
+            </div>
+            <div className="mt-2.5 w-full bg-oled-950/80 h-1.5 rounded-full overflow-hidden p-0.5 ring-1 ring-white/5">
+              <div
+                className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full rounded-full transition-all duration-700 ease-spring-fluid"
+                style={{ width: `${Math.min(100, Math.max(2, cpuUsed))}%` }}
+              />
+            </div>
+          </div>
+          <div className="mt-3 flex justify-between items-center text-[10px] font-mono text-gray-500 border-t border-white/[0.04] pt-2">
+            <span>Intel i7-12700H</span>
+            <span className="text-gray-400">{telemetry.cpu?.cores_logical || 20} Cores Active</span>
+          </div>
         </div>
-        <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
-          <div
-            className="bg-blue-500 h-full rounded-full transition-all duration-500"
-            style={{ width: `${Math.min(100, cpuUsed)}%` }}
-          />
-        </div>
-        <span className="text-[11px] text-gray-500 mt-1 font-mono">
-          {telemetry.cpu?.cores_logical || 20} Logical Cores
-        </span>
       </div>
 
-      {/* RAM Gauge */}
-      <div className="flex flex-col">
-        <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
-          <span className="font-medium tracking-wide">SYSTEM RAM</span>
-          <span className="font-mono text-gray-200">{ramUsed.toFixed(1)}%</span>
+      {/* 2. System RAM */}
+      <div className="doppelrand-shell group">
+        <div className="doppelrand-core p-4 flex flex-col justify-between h-full">
+          <div>
+            <div className="flex justify-between items-center text-[11px] font-mono tracking-wider text-gray-400">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyber-blue" />
+                SYSTEM RAM
+              </span>
+              <span className="text-gray-200 font-semibold">{ramUsed.toFixed(1)}%</span>
+            </div>
+            <div className="mt-2.5 w-full bg-oled-950/80 h-1.5 rounded-full overflow-hidden p-0.5 ring-1 ring-white/5">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ease-spring-fluid ${
+                  ramUsed > 85
+                    ? 'bg-gradient-to-r from-amber-500 to-rose-500'
+                    : 'bg-gradient-to-r from-blue-500 to-indigo-400'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(2, ramUsed))}%` }}
+              />
+            </div>
+          </div>
+          <div className="mt-3 flex justify-between items-center text-[10px] font-mono text-gray-500 border-t border-white/[0.04] pt-2">
+            <span>16GB Host DDR5</span>
+            <span className="text-gray-400 font-medium">
+              {(telemetry.ram?.free_mb / 1024).toFixed(1)} GB Free
+            </span>
+          </div>
         </div>
-        <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              ramUsed > 85 ? 'bg-amber-500' : 'bg-blue-500'
-            }`}
-            style={{ width: `${Math.min(100, ramUsed)}%` }}
-          />
-        </div>
-        <span className="text-[11px] text-gray-400 mt-1 font-mono">
-          {(telemetry.ram?.free_mb / 1024).toFixed(1)} GB Free of {(telemetry.ram?.total_mb / 1024).toFixed(1)} GB
-        </span>
       </div>
 
-      {/* VRAM Gauge */}
-      <div className="flex flex-col">
-        <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
-          <span className="font-medium tracking-wide">NVIDIA GPU VRAM</span>
-          <span className="font-mono text-gray-200">{vramUsed.toFixed(1)}%</span>
+      {/* 3. GPU VRAM */}
+      <div className="doppelrand-shell group">
+        <div className="doppelrand-core p-4 flex flex-col justify-between h-full">
+          <div>
+            <div className="flex justify-between items-center text-[11px] font-mono tracking-wider text-gray-400">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyber-emerald animate-pulse" />
+                NVIDIA VRAM
+              </span>
+              <span className="text-gray-200 font-semibold">{vramUsed.toFixed(1)}%</span>
+            </div>
+            <div className="mt-2.5 w-full bg-oled-950/80 h-1.5 rounded-full overflow-hidden p-0.5 ring-1 ring-white/5">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ease-spring-fluid ${
+                  vramUsed > 85
+                    ? 'bg-gradient-to-r from-amber-500 to-rose-500'
+                    : 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(2, vramUsed))}%` }}
+              />
+            </div>
+          </div>
+          <div className="mt-3 flex justify-between items-center text-[10px] font-mono text-gray-500 border-t border-white/[0.04] pt-2">
+            <span>RTX 3050 Laptop</span>
+            <span className="text-cyber-emerald font-medium">
+              {telemetry.gpu?.allocated_mb?.toFixed(0) || 0} / 4096 MB
+            </span>
+          </div>
         </div>
-        <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              vramUsed > 85 ? 'bg-rose-500' : 'bg-emerald-500'
-            }`}
-            style={{ width: `${Math.min(100, vramUsed)}%` }}
-          />
-        </div>
-        <span className="text-[11px] text-gray-400 mt-1 font-mono">
-          {telemetry.gpu?.allocated_mb?.toFixed(0) || 0} MB / 4096 MB VRAM
-        </span>
       </div>
 
-      {/* Hardware Safety Envelope */}
-      <div className="flex flex-col justify-center">
-        <div className="text-xs text-gray-400 mb-1 font-medium tracking-wide">PRE-FLIGHT GATE</div>
-        <div className={`px-2.5 py-1 rounded-md border text-xs font-mono font-medium flex items-center justify-between ${safetyColor}`}>
-          <span>STATUS: {safety}</span>
-          <span className="text-[10px] uppercase">
-            {telemetry.can_run_evaluation ? '● READY' : '■ THROTTLED'}
-          </span>
+      {/* 4. Pre-Flight Hardware Gate */}
+      <div className="doppelrand-shell group">
+        <div className="doppelrand-core p-4 flex flex-col justify-between h-full">
+          <div>
+            <div className="flex justify-between items-center text-[11px] font-mono tracking-wider text-gray-400">
+              <span>PRE-FLIGHT GATE</span>
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono ring-1 font-semibold ${safetyStyle.badge}`}>
+                ● {safetyStyle.label}
+              </span>
+            </div>
+            <div className="mt-2 text-xs font-medium text-gray-200">
+              {telemetry.can_run_evaluation ? 'Single-Model Execution Ready' : 'Execution Queue Throttled'}
+            </div>
+          </div>
+          <div className="mt-3 flex justify-between items-center text-[10px] font-mono text-gray-500 border-t border-white/[0.04] pt-2">
+            <span>RAM Safety Floor</span>
+            <span className="text-gray-400">&gt;= 1.5 GB Buffer</span>
+          </div>
         </div>
       </div>
     </div>
