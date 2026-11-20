@@ -45,6 +45,9 @@
         <button onclick="switchTab('models')" class="tab-btn w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-[#1E293B]">
           <span>🤖</span><span>Model Registry</span>
         </button>
+        <button onclick="switchTab('evaluations')" class="tab-btn w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-[#1E293B]">
+          <span>🧪</span><span>Promptfoo Evaluations</span>
+        </button>
         <button onclick="switchTab('benchmarks')" class="tab-btn w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-gray-200 hover:bg-[#1E293B]">
           <span>📈</span><span>Benchmarks & Pareto</span>
         </button>
@@ -83,13 +86,13 @@
 
       <div class="flex items-center space-x-4">
         <label class="text-xs text-gray-400 font-mono flex items-center space-x-2">
-          <span>MODEL:</span>
+          <span>TARGET MODEL:</span>
           <select id="model-select" class="bg-[#1F2937] border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 font-mono focus:outline-none">
             <option value="llama3.2:latest">llama3.2:latest (3B)</option>
             <option value="qwen2.5:3b">qwen2.5:3b (3B)</option>
-            <option value="qwen3:4b">qwen3:4b (4B)</option>
-            <option value="qwen3:8b">qwen3:8b (8B)</option>
-            <option value="qwen3:1.7b">qwen3:1.7b (1.7B)</option>
+            <option value="qwen3:1.7b">qwen3:1.7b (1.7B Reasoning)</option>
+            <option value="qwen3:4b">qwen3:4b (4B Reasoning)</option>
+            <option value="qwen3:8b">qwen3:8b (8B Reasoning)</option>
           </select>
         </label>
         <button onclick="syncModels()" id="btn-sync" class="text-xs bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg transition-colors flex items-center space-x-1">
@@ -164,9 +167,9 @@
             <div class="text-[11px] text-gray-400 mt-1">Llama 3.2 (3B)</div>
           </div>
           <div class="p-4 bg-[#111827] border border-[#1F2937] rounded-xl">
-            <div class="text-xs font-mono text-gray-400">DEFENSE TEST SUITES</div>
-            <div class="text-2xl font-bold mt-1 text-purple-400">4 Categories</div>
-            <div class="text-[11px] text-gray-400 mt-1">Injection, Jailbreak, Leakage</div>
+            <div class="text-xs font-mono text-gray-400">RIGOROUS SUITES</div>
+            <div class="text-2xl font-bold mt-1 text-purple-400">Seeded</div>
+            <div class="text-[11px] text-gray-400 mt-1">Promptfoo Powered</div>
           </div>
         </div>
 
@@ -183,15 +186,39 @@
                   <th>PARAMS</th>
                   <th>QUANT</th>
                   <th>DISK SIZE</th>
-                  <th>SPEED TIER</th>
+                  <th>HARDWARE FIT</th>
                 </tr>
               </thead>
-              <tbody id="models-table-body" class="divide-y divide-gray-800/50">
-                <!-- Dynamically populated -->
-              </tbody>
+              <tbody id="models-table-body" class="divide-y divide-gray-800/50"></tbody>
             </table>
           </div>
         </div>
+      </section>
+
+      <!-- VIEW: EVALUATIONS -->
+      <section id="view-evaluations" class="view-panel hidden space-y-6">
+        <div class="p-5 bg-[#111827] border border-[#1F2937] rounded-xl flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-semibold">Promptfoo Rigorous Test Suites</h3>
+            <p class="text-xs text-gray-400 mt-1">Launch pre-packaged evaluation suites via managed Promptfoo child subprocess.</p>
+          </div>
+          <div class="flex space-x-3">
+            <button onclick="runRigorousEval('Promptfoo Rigorous Security Suite')" id="btn-eval-sec" class="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium transition-colors">
+              Evaluate Security Suite
+            </button>
+            <button onclick="runRigorousEval('Instruction Following & Reasoning Suite')" id="btn-eval-gen" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition-colors">
+              Evaluate Reasoning Suite
+            </button>
+          </div>
+        </div>
+        <div id="eval-status-card" class="hidden p-4 bg-[#0E1524] border border-blue-500/30 rounded-xl text-xs font-mono space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-blue-400 font-bold" id="eval-run-title">RUN SUBMITTED</span>
+            <span id="eval-run-badge" class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">QUEUED</span>
+          </div>
+          <div class="text-gray-300" id="eval-run-desc">Processing in sequential queue...</div>
+        </div>
+        <div id="eval-results-container" class="space-y-4"></div>
       </section>
 
       <!-- VIEW: BENCHMARKS -->
@@ -199,9 +226,7 @@
         <div class="p-5 bg-[#111827] border border-[#1F2937] rounded-xl">
           <h3 class="text-sm font-semibold mb-2">Speed vs. Accuracy Pareto Frontier</h3>
           <p class="text-xs text-gray-400 mb-4">Non-dominated local models balancing evaluation speed against answer quality.</p>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="pareto-cards">
-            <!-- Dynamically populated -->
-          </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="pareto-cards"></div>
         </div>
       </section>
 
@@ -210,11 +235,17 @@
         <div class="p-5 bg-[#111827] border border-[#1F2937] rounded-xl flex items-center justify-between">
           <div>
             <h3 class="text-sm font-semibold">Adversarial Red-Teaming Scanner</h3>
-            <p class="text-xs text-gray-400 mt-1">Direct Prompt Injection, DAN Jailbreaks, PII Leakage, and Boundary Overrides.</p>
+            <p class="text-xs text-gray-400 mt-1">Prompt Injection, DAN Jailbreaks, PII Leakage, and Boundary Overrides.</p>
           </div>
-          <button onclick="runSecurityScan()" id="btn-scan" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium transition-colors">
-            Run Security Scan
-          </button>
+          <div class="flex items-center space-x-3">
+            <select id="sec-engine" class="bg-[#1F2937] border border-gray-700 text-gray-200 text-xs rounded px-2.5 py-1.5 font-mono">
+              <option value="promptfoo">Engine: Promptfoo (Rigorous Assertions)</option>
+              <option value="direct">Engine: Direct Ollama Probe (512 Tokens)</option>
+            </select>
+            <button onclick="runSecurityScan()" id="btn-scan" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium transition-colors">
+              Run Security Scan
+            </button>
+          </div>
         </div>
         <div id="security-results" class="space-y-4"></div>
       </section>
@@ -260,6 +291,8 @@
   </main>
 
   <script>
+    let activeDatasets = [];
+
     // Tab switching
     function switchTab(tabId) {
       document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
@@ -300,9 +333,7 @@
         const safetyPill = document.getElementById('safety-pill');
         const safetyText = document.getElementById('safety-text');
         safetyText.textContent = `STATUS: ${data.hardware_safety_status}`;
-      } catch (e) {
-        console.error("Telemetry fetch error", e);
-      }
+      } catch (e) { console.error(e); }
     }
 
     // Load Models
@@ -342,6 +373,79 @@
       } finally {
         text.textContent = 'Sync Models';
         btn.disabled = false;
+      }
+    }
+
+    // Load Datasets
+    async function loadDatasets() {
+      try {
+        const res = await fetch('/api/v1/datasets');
+        activeDatasets = (await res.json()).data || [];
+      } catch (e) { console.error(e); }
+    }
+
+    // Run Rigorous Promptfoo Evaluation
+    async function runRigorousEval(suiteName) {
+      const model = document.getElementById('model-select').value;
+      const targetDataset = activeDatasets.find(d => d.name === suiteName);
+      if (!targetDataset) {
+        alert(`Dataset '${suiteName}' not found.`);
+        return;
+      }
+
+      const statusCard = document.getElementById('eval-status-card');
+      statusCard.classList.remove('hidden');
+      document.getElementById('eval-run-title').textContent = `Evaluating: ${suiteName}`;
+      document.getElementById('eval-run-desc').textContent = `Target Model: ${model} | Sequential Worker Enqueued`;
+
+      try {
+        const res = await fetch('/api/v1/evaluations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model_id: model,
+            dataset_id: targetDataset.id,
+            num_predict: 512,
+            concurrency: 1
+          })
+        });
+        const runData = (await res.json()).data;
+        const runId = runData.id;
+
+        // Poll run completion
+        const pollInterval = setInterval(async () => {
+          const checkRes = await fetch(`/api/v1/evaluations/${runId}`);
+          const run = (await checkRes.json()).data;
+          document.getElementById('eval-run-badge').textContent = run.status;
+          if (run.status === 'COMPLETED' || run.status === 'FAILED') {
+            clearInterval(pollInterval);
+            document.getElementById('eval-run-desc').textContent = `Completed in ${run.total_duration_seconds?.toFixed(1) || 0}s | Throughput: ${run.tokens_per_second_avg?.toFixed(1) || 0} t/s`;
+            
+            // Fetch results
+            const resultsRes = await fetch(`/api/v1/evaluations/${runId}/results`);
+            const results = (await resultsRes.json()).data || [];
+            const container = document.getElementById('eval-results-container');
+            container.innerHTML = `
+              <div class="p-4 bg-[#111827] border border-[#1F2937] rounded-xl space-y-3">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-gray-300">Test Case Results (${results.length} Tests)</h4>
+                ${results.map(r => `
+                  <div class="p-3 bg-[#0E1524] border border-gray-800 rounded-lg text-xs space-y-1">
+                    <div class="flex justify-between items-center">
+                      <span class="font-bold text-gray-200 font-mono">Prompt: "${r.prompt_text || 'Test Prompt'}"</span>
+                      <span class="px-2 py-0.5 rounded text-[10px] font-mono ${r.passed ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">
+                        ${r.passed ? 'PASSED' : 'FAILED'}
+                      </span>
+                    </div>
+                    <div class="text-gray-300 font-mono bg-black/40 p-2 rounded">Output: "${r.raw_output || ''}"</div>
+                    <div class="text-gray-500 text-[10px] font-mono">Latency: ${r.latency_ms.toFixed(0)}ms | Tokens: ${r.completion_tokens || 0}</div>
+                  </div>
+                `).join('')}
+              </div>
+            `;
+          }
+        }, 2000);
+      } catch (e) {
+        alert("Evaluation submission failed: " + e);
       }
     }
 
@@ -409,14 +513,19 @@
     // Security Scan
     async function runSecurityScan() {
       const model = document.getElementById('model-select').value;
+      const engine = document.getElementById('sec-engine').value;
       const btn = document.getElementById('btn-scan');
       btn.disabled = true;
-      btn.textContent = 'Running Security Audit...';
+      btn.textContent = engine === 'promptfoo' ? 'Running Promptfoo Assertions...' : 'Querying Model Probes...';
       try {
         const res = await fetch('/api/v1/security/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_id: model })
+          body: JSON.stringify({
+            model_id: model,
+            engine: engine,
+            num_predict: 512
+          })
         });
         const rep = (await res.json()).data;
         const resDiv = document.getElementById('security-results');
@@ -425,24 +534,27 @@
             <div class="flex items-center justify-between border-b border-gray-800 pb-3">
               <div>
                 <span class="text-xs text-gray-400 font-mono">TARGET MODEL:</span>
-                <h4 class="text-base font-bold text-white">${rep.model_id}</h4>
+                <h4 class="text-base font-bold text-white">${rep.model_id} <span class="text-xs font-normal text-blue-400 font-mono">(${rep.engine_used.toUpperCase()} ENGINE)</span></h4>
               </div>
               <div class="text-right">
                 <span class="text-xs text-gray-400 font-mono">DEFENSE RATE:</span>
-                <div class="text-xl font-bold text-emerald-400">${(rep.defense_rate * 100).toFixed(0)}%</div>
+                <div class="text-xl font-bold ${rep.defense_rate >= 0.8 ? 'text-emerald-400' : 'text-rose-400'}">
+                  ${(rep.defense_rate * 100).toFixed(0)}%
+                </div>
               </div>
             </div>
             <div class="space-y-2">
               ${rep.attack_details.map(a => `
-                <div class="p-3 bg-[#0E1524] border border-gray-800 rounded-lg text-xs space-y-1">
+                <div class="p-3 bg-[#0E1524] border border-gray-800 rounded-lg text-xs space-y-1.5">
                   <div class="flex justify-between items-center">
                     <span class="font-bold text-gray-200">[${a.category.toUpperCase()}] ${a.attack_vector}</span>
-                    <span class="px-2 py-0.5 rounded text-[10px] font-mono ${a.defended ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${a.defended ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}">
                       ${a.defended ? 'DEFENDED' : 'VULNERABLE'}
                     </span>
                   </div>
                   <div class="text-gray-400 font-mono">Vector: "${a.prompt}"</div>
-                  <div class="text-gray-300 font-mono bg-black/40 p-2 rounded">Response: "${a.model_response}"</div>
+                  <div class="text-gray-200 font-mono bg-black/40 p-2 rounded">Output: "${a.model_response}"</div>
+                  <div class="text-gray-500 text-[11px] font-mono">${a.reason}</div>
                 </div>
               `).join('')}
             </div>
@@ -519,6 +631,7 @@
     // Startup
     updateTelemetry();
     loadModels();
+    loadDatasets();
     loadRankings();
     setInterval(updateTelemetry, 2500);
   </script>

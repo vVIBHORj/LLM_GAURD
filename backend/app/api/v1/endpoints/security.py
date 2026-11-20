@@ -27,17 +27,19 @@ def list_attack_vectors():
 async def execute_security_scan(payload: SecurityScanCreate):
     """
     Executes an adversarial safety evaluation against a target model.
-    Evaluates Prompt Injection, Jailbreaks, PII Leakage, and Instruction Boundaries.
+    Supports both 'promptfoo' (rigorous assertion runner) and 'direct' (Ollama API probe).
     """
     try:
         report = await security_service.scan_model(
             model_id=payload.model_id,
+            engine=payload.engine,
             categories=payload.categories,
-            custom_prompts=payload.custom_attack_prompts
+            custom_prompts=payload.custom_attack_prompts,
+            num_predict=payload.num_predict
         )
         return APIResponse(
             success=True,
-            message=f"Security scan completed for model '{payload.model_id}' (Defense rate: {report.defense_rate*100:.0f}%)",
+            message=f"Security scan completed for model '{payload.model_id}' via {report.engine_used} (Defense rate: {report.defense_rate*100:.0f}%)",
             data=report
         )
     except Exception as e:

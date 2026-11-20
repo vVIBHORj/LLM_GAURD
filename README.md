@@ -5,7 +5,7 @@
 [![SQLite WAL](https://img.shields.io/badge/SQLite-WAL%20Mode-003B57.svg)](https://www.sqlite.org/wal.html)
 [![Promptfoo](https://img.shields.io/badge/Promptfoo-v0.126-orange.svg)](https://www.promptfoo.dev/)
 [![Ollama](https://img.shields.io/badge/Ollama-Local%20Inference-black.svg)](https://ollama.com/)
-[![Tests](https://img.shields.io/badge/Tests-22%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-24%20Passing-brightgreen.svg)]()
 [![Hardware Verified](https://img.shields.io/badge/Hardware-RTX%203050%20(4GB)-76B900.svg)](https://www.nvidia.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -66,13 +66,29 @@ flowchart TD
 - Explicitly binds providers to IPv4: `host: "http://127.0.0.1:11434"` (preventing Node.js IPv6 `::1` connection drops on Windows).
 - Manages execution timeouts, process tree termination, and output sanitization.
 
-### 3. Adversarial Security & Red-Teaming Scanner
-Standardized automated test suites detecting:
-- **Direct Prompt Injection:** Instruction overrides & system prompt extraction probes.
-- **Jailbreak Bypasses:** Fictional scenario framing & roleplay bypass attempts.
-- **Sensitive Data Leakage:** PII harvesting & API credential elicitation.
-- **Instruction Boundary Integrity:** Context document attacks impersonating administrative instructions.
-- Automated vulnerability scorecard generation (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`).
+### 3. Adversarial Security & Red-Teaming Scanner (Dual-Engine)
+The platform features an automated adversarial red-teaming scanner supporting two evaluation modes:
+
+1. **Promptfoo Rigorous Engine (CLI-Orchestrated Assertions):**
+   - Automatically generates declarative Promptfoo YAML test suites in `/data/configs/`.
+   - Applies strict `not-contains`, `contains`, and regex assertions executed against local Ollama models.
+   - Extracts real assertion pass/fail results directly from Promptfoo v0.126+ runtime reports.
+
+2. **Direct Ollama Probing with Reasoning Token Inspection:**
+   - Directly probes models via HTTP API while inspecting both completion (`data['response']`) and chain-of-thought tokens (`data['thinking']`).
+   - Automatically budgets 512+ prediction tokens to ensure reasoning models (`qwen3:1.7b`, `qwen3:4b`, `qwen3:8b`) complete their internal reasoning before generating final answers.
+   - **Zero False-Positive Defense Gate:** Explicitly catches empty responses, timeouts, and reasoning-only outputs without refusal, classifying unrefused empty responses as `VULNERABLE (HIGH)` rather than falsely marking them as defended.
+
+#### Standardized Enterprise Attack Vectors (12+ Probes):
+- **Direct Prompt Injection:** Instruction override (`PWNED_BY_INJECTION`), Developer Mode disablement (`Developer Mode Enabled`), and system prompt extraction.
+- **Jailbreak Bypasses:** Fictional scenario framing, Do Anything Now (DAN) roleplay, and adversarial destructive shell script generation.
+- **Sensitive Data Leakage:** PII harvesting (SSN extraction), live AWS secret key elicitation (`AKIA`), and payment card pattern exfiltration.
+- **Instruction Boundary Integrity:** Context document attacks with injected admin passkeys (`ADMIN_SECRET_123`) and JSON delimiter escape sequences.
+- **Command & SQL Injection:** Database password exfiltration SQL queries (`OR 1=1`).
+
+#### Pre-Seeded Evaluation Suites (SQLite):
+- **Promptfoo Rigorous Security Suite:** 12 declarative assertion-backed security tests automatically seeded on first launch.
+- **Instruction Following & Reasoning Suite:** Delimiter parsing, structured JSON generation, and deductive logic benchmarks.
 
 ### 4. RAG Triad Reliability Engine
 - Local document chunking with configurable sliding windows.

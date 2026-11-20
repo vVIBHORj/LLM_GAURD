@@ -31,9 +31,45 @@ class ResultParser:
         results_data = raw_data.get("results", raw_data)
         table = results_data.get("table", {})
         body = table.get("body", [])
+        raw_items = results_data.get("results", [])
         stats = results_data.get("stats", {})
 
         jsonl_artifact_path = settings.PROMPTFOO_RUNS_DIR / f"{run_id}.jsonl"
+
+        # Normalize items from either Promptfoo v0.126+ results array or table.body
+        normalized_rows = []
+        if raw_items:
+            for item in raw_items:
+                grading = item.get("gradingResult", {})
+                resp = item.get("response", {})
+                toks = item.get("tokenUsage", {})
+                passed = bool(grading.get("pass", False))
+                normalized_rows.append({
+                    "vars": item.get("vars", {}),
+                    "passed": passed,
+                    "score": float(grading.get("score", 1.0 if passed else 0.0)),
+                    "raw_text": str(resp.get("output", "")),
+                    "latency_ms": float(item.get("latencyMs", 0.0)),
+                    "prompt_tokens": int(toks.get("prompt", 0)),
+                    "comp_tokens": int(toks.get("completion", 0)),
+                    "grading": grading
+                })
+        elif body:
+            for row in body:
+                outputs = row.get("outputs", [])
+                output_entry = outputs[0] if outputs else {}
+                toks = output_entry.get("tokenUsage", {})
+                passed = bool(output_entry.get("pass", False))
+                normalized_rows.append({
+                    "vars": row.get("vars", {}),
+                    "passed": passed,
+                    "score": float(output_entry.get("score", 1.0 if passed else 0.0)),
+                    "raw_text": str(output_entry.get("text", "")),
+                    "latency_ms": float(output_entry.get("latencyMs", 0.0)),
+                    "prompt_tokens": int(toks.get("prompt", 0)),
+                    "comp_tokens": int(toks.get("completion", 0)),
+                    "grading": output_entry.get("gradingResult")
+                })
 
         parsed_results = []
         total_latency_ms = 0.0
@@ -41,18 +77,13 @@ class ResultParser:
         total_prompt_tokens = 0
         passed_count = 0
 
-        for row_idx, row in enumerate(body):
-            outputs = row.get("outputs", [])
-            output_entry = outputs[0] if outputs else {}
-
-            passed = bool(output_entry.get("pass", False))
-            score = float(output_entry.get("score", 1.0 if passed else 0.0))
-            raw_text = str(output_entry.get("text", ""))
-            latency_ms = float(output_entry.get("latencyMs", 0.0))
-
-            token_usage = output_entry.get("tokenUsage", {})
-            prompt_tokens = token_usage.get("prompt", 0)
-            comp_tokens = token_usage.get("completion", 0)
+        for row_idx, row in enumerate(normalized_rows):
+            passed = row["passed"]
+            score = row["score"]
+            raw_text = row["raw_text"]
+            latency_ms = row["latency_ms"]
+            prompt_tokens = row["prompt_tokens"]
+            comp_tokens = row["comp_tokens"]
 
             total_latency_ms += latency_ms
             total_completion_tokens += comp_tokens
@@ -72,7 +103,7 @@ class ResultParser:
                 "passed": passed,
                 "score": score,
                 "latency_ms": latency_ms,
-                "grading": output_entry.get("gradingResult")
+                "grading": row.get("grading")
             }
             line_idx = jsonl_storage.append_record(jsonl_artifact_path, jsonl_record)
 
@@ -86,7 +117,7 @@ class ResultParser:
                 "jsonl_line_index": line_idx
             })
 
-        total_tests = len(body)
+        total_tests = len(normalized_rows)
         avg_latency_ms = (total_latency_ms / total_tests) if total_tests > 0 else 0.0
         accuracy_rate = (passed_count / total_tests) if total_tests > 0 else 0.0
 

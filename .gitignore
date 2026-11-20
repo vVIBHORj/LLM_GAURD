@@ -24,6 +24,11 @@ wheels/
 .coverage
 htmlcov/
 *.log
+scratch/
+test_pf*
+pf_check*
+*.tmp
+temp/
 
 # Local Runtime Data & Databases
 data/*.db
