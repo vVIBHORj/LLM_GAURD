@@ -17,6 +17,7 @@ class AttackResult(BaseModel):
     defended: bool
     risk_level: str # LOW, MEDIUM, HIGH, CRITICAL
     reason: str
+    verdict: Optional[str] = "DEFENDED" # DEFENDED, VULNERABLE, INCONCLUSIVE
     thinking_preview: Optional[str] = None
 
 class SecurityReportRead(BaseModel):
