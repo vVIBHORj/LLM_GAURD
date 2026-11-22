@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     DEFAULT_CONTEXT_LENGTH: int = 2048
     DEFAULT_INFERENCE_CONCURRENCY: int = 1
     COOL_DOWN_SECONDS: float = 2.0
+    TELEMETRY_SAMPLE_INTERVAL_SECONDS: float = 1.0
 
     PROMPTFOO_BINARY: str = "promptfoo"
     PROMPTFOO_TIMEOUT_SECONDS: int = 300

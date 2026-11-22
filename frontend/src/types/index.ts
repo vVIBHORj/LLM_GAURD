@@ -1,6 +1,6 @@
 export interface Telemetry {
   cpu: {
-    usage_percent: number;
+    usage_percent: number | null;
     cores_logical: number;
     cores_physical: number;
   };
@@ -16,8 +16,27 @@ export interface Telemetry {
     total_mb: number;
     allocated_mb: number;
     free_mb: number;
+    reserved_mb?: number | null;
     vram_usage_percent: number;
+    gpu_utilization_percent?: number | null;
+    temperature_c?: number | null;
+    power_w?: number | null;
+    source?: string | null;
   };
+  ollama?: {
+    available: boolean;
+    active_models: Array<{
+      name: string;
+      size_mb: number;
+      size_vram_mb: number;
+      digest?: string | null;
+      details?: Record<string, any> | null;
+      expires_at?: string | null;
+    }>;
+    total_vram_mb: number;
+    total_size_mb: number;
+    error?: string | null;
+  } | null;
   hardware_safety_status: 'SAFE' | 'WARNING' | 'CRITICAL';
   can_run_evaluation: boolean;
   reason: string;

@@ -7,6 +7,7 @@ from backend.app.services.ollama_service import ollama_service
 from backend.app.services.promptfoo_service import promptfoo_service
 from backend.app.services.result_parser import result_parser
 from backend.app.services.hardware_monitor import hardware_monitor
+from backend.app.services.telemetry_sampler import TelemetrySampler
 from backend.app.db.session import SessionLocal
 from backend.app.db.models.evaluation import EvaluationRun, EvaluationResult
 from backend.app.db.models.dataset import Dataset
@@ -109,17 +110,20 @@ class ExecutionWorker:
                         num_ctx=item.payload.get("num_ctx", 2048)
                     )
 
-                    # 5. Execute Promptfoo Subprocess
-                    exit_code, stderr_output, json_output_path = await promptfoo_service.run_evaluation(
-                        run_id=run_id,
-                        config_path=config_path,
-                        concurrency=item.payload.get("concurrency", 1)
-                    )
+                    # 5. Execute Promptfoo Subprocess with In-Inference Telemetry Sampling
+                    sampler = TelemetrySampler(run_id=run_id)
+                    await sampler.start()
+                    try:
+                        exit_code, stderr_output, json_output_path = await promptfoo_service.run_evaluation(
+                            run_id=run_id,
+                            config_path=config_path,
+                            concurrency=item.payload.get("concurrency", 1)
+                        )
+                    finally:
+                        telemetry_summary = await sampler.stop()
 
-                    # Sample peak telemetry
-                    final_telemetry = hardware_monitor.sample_telemetry()
-                    peak_ram = final_telemetry["ram"]["total_mb"] - final_telemetry["ram"]["free_mb"]
-                    peak_vram = final_telemetry.get("gpu", {}).get("allocated_mb", 0.0)
+                    peak_ram = telemetry_summary.peak_ram_mb
+                    peak_vram = telemetry_summary.peak_vram_mb
 
                     # 6. Parse Results and Persist
                     parsed = result_parser.parse_promptfoo_output(
@@ -147,6 +151,18 @@ class ExecutionWorker:
                     db.add(Metric(run_id=run_id, metric_name="avg_latency_ms", metric_value=parsed["avg_latency_ms"]))
                     db.add(Metric(run_id=run_id, metric_name="tokens_per_second", metric_value=parsed["tokens_per_sec"]))
 
+                    # In-inference hardware telemetry metrics
+                    db.add(Metric(run_id=run_id, metric_name="avg_vram_mb", metric_value=round(telemetry_summary.avg_vram_mb, 1)))
+                    db.add(Metric(run_id=run_id, metric_name="avg_ram_mb", metric_value=round(telemetry_summary.avg_ram_mb, 1)))
+                    db.add(Metric(run_id=run_id, metric_name="avg_cpu_percent", metric_value=round(telemetry_summary.avg_cpu_percent, 1)))
+                    db.add(Metric(run_id=run_id, metric_name="peak_cpu_percent", metric_value=round(telemetry_summary.peak_cpu_percent, 1)))
+                    if telemetry_summary.peak_gpu_utilization is not None:
+                        db.add(Metric(run_id=run_id, metric_name="peak_gpu_utilization", metric_value=round(telemetry_summary.peak_gpu_utilization, 1)))
+                    if telemetry_summary.avg_gpu_utilization is not None:
+                        db.add(Metric(run_id=run_id, metric_name="avg_gpu_utilization", metric_value=round(telemetry_summary.avg_gpu_utilization, 1)))
+                    if telemetry_summary.peak_ollama_vram_mb is not None:
+                        db.add(Metric(run_id=run_id, metric_name="peak_ollama_vram_mb", metric_value=round(telemetry_summary.peak_ollama_vram_mb, 1)))
+
                     # Update Run record
                     run.status = "COMPLETED"
                     run.completed_at = datetime.utcnow()
@@ -167,6 +183,9 @@ class ExecutionWorker:
                             run.status = "FAILED"
                             run.error_message = str(e)
                             run.completed_at = datetime.utcnow()
+                            if "telemetry_summary" in locals() and telemetry_summary:
+                                run.peak_vram_mb = telemetry_summary.peak_vram_mb
+                                run.peak_ram_mb = telemetry_summary.peak_ram_mb
                             db.commit()
                     except Exception:
                         pass

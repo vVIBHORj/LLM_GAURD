@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from backend.app.schemas.common import APIResponse
-from backend.app.schemas.monitoring import TelemetryResponse, CPUMetrics, RAMMetrics, GPUMetrics
+from backend.app.schemas.monitoring import TelemetryResponse, CPUMetrics, RAMMetrics, GPUMetrics, OllamaTelemetry
 from backend.app.services.hardware_monitor import hardware_monitor
 from backend.app.core.hardware_gate import HardwareGate
 
@@ -25,10 +25,13 @@ def get_hardware_telemetry():
     else:
         safety_status = "SAFE"
 
+    ollama_data = OllamaTelemetry(**raw["ollama"]) if raw.get("ollama") else None
+
     payload = TelemetryResponse(
         cpu=CPUMetrics(**raw["cpu"]),
         ram=RAMMetrics(**raw["ram"]),
         gpu=GPUMetrics(**raw["gpu"]),
+        ollama=ollama_data,
         hardware_safety_status=safety_status,
         can_run_evaluation=allowed,
         reason=reason
