@@ -6,7 +6,6 @@ from backend.app.core.hardware_gate import HardwareGate
 from backend.app.services.ollama_service import ollama_service
 from backend.app.services.promptfoo_service import promptfoo_service
 from backend.app.services.result_parser import result_parser
-from backend.app.services.hardware_monitor import hardware_monitor
 from backend.app.services.telemetry_sampler import TelemetrySampler
 from backend.app.db.session import SessionLocal
 from backend.app.db.models.evaluation import EvaluationRun, EvaluationResult
@@ -62,6 +61,16 @@ class ExecutionWorker:
                     # Update status to RUNNING
                     run.status = "RUNNING"
                     run.started_at = datetime.utcnow()
+                    if run.dataset_id is None:
+                        run.dataset_id = item.payload.get("dataset_id")
+                    if run.temperature is None:
+                        run.temperature = item.payload.get("temperature")
+                    if run.num_predict is None:
+                        run.num_predict = item.payload.get("num_predict")
+                    if run.num_ctx is None:
+                        run.num_ctx = item.payload.get("num_ctx")
+                    if run.concurrency is None:
+                        run.concurrency = item.payload.get("concurrency")
                     db.commit()
 
                     # 1. Pre-Flight Hardware Gate
@@ -152,7 +161,12 @@ class ExecutionWorker:
                     db.add(Metric(run_id=run_id, metric_name="tokens_per_second", metric_value=parsed["tokens_per_sec"]))
 
                     # In-inference hardware telemetry metrics
-                    db.add(Metric(run_id=run_id, metric_name="avg_vram_mb", metric_value=round(telemetry_summary.avg_vram_mb, 1)))
+                    gpu_details = {
+                        "gpu_name": telemetry_summary.gpu_name,
+                        "source": telemetry_summary.gpu_source,
+                        "sample_count": telemetry_summary.sample_count
+                    }
+                    db.add(Metric(run_id=run_id, metric_name="avg_vram_mb", metric_value=round(telemetry_summary.avg_vram_mb, 1), details=gpu_details))
                     db.add(Metric(run_id=run_id, metric_name="avg_ram_mb", metric_value=round(telemetry_summary.avg_ram_mb, 1)))
                     db.add(Metric(run_id=run_id, metric_name="avg_cpu_percent", metric_value=round(telemetry_summary.avg_cpu_percent, 1)))
                     db.add(Metric(run_id=run_id, metric_name="peak_cpu_percent", metric_value=round(telemetry_summary.peak_cpu_percent, 1)))

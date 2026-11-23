@@ -45,8 +45,13 @@ class MetricRead(BaseModel):
 class EvaluationRunRead(BaseModel):
     id: str
     experiment_id: Optional[str] = None
+    dataset_id: Optional[str] = None
     model_id: str
     status: str
+    temperature: Optional[float] = None
+    num_predict: Optional[int] = None
+    num_ctx: Optional[int] = None
+    concurrency: Optional[int] = None
     total_duration_seconds: Optional[float] = None
     tokens_per_second_avg: Optional[float] = None
     peak_vram_mb: Optional[float] = None

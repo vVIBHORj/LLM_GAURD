@@ -97,10 +97,64 @@ def seed_default_datasets(db: Session):
 
     db.commit()
 
+def migrate_schema(target_engine):
+    """
+    Ensures newly added columns are present in existing database tables
+    without dropping or recreating existing data.
+    """
+    from sqlalchemy import inspect, text
+    inspector = inspect(target_engine)
+    table_names = inspector.get_table_names()
+
+    column_migrations = {
+        "evaluation_runs": [
+            ("dataset_id", "VARCHAR(36) REFERENCES datasets(id)"),
+            ("temperature", "FLOAT"),
+            ("num_predict", "INTEGER"),
+            ("num_ctx", "INTEGER"),
+            ("concurrency", "INTEGER"),
+        ],
+        "benchmark_reports": [
+            ("dataset_id", "VARCHAR(36) REFERENCES datasets(id)"),
+            ("generation_config", "JSON"),
+        ],
+        "benchmark_results": [
+            ("run_id", "VARCHAR(36) REFERENCES evaluation_runs(id)"),
+            ("status", "VARCHAR(20) DEFAULT 'BENCHMARKED'"),
+            ("avg_latency_ms", "FLOAT"),
+            ("peak_vram_mb", "FLOAT"),
+            ("peak_ollama_vram_mb", "FLOAT"),
+            ("gpu_name", "VARCHAR(100)"),
+            ("gpu_source", "VARCHAR(50)"),
+        ],
+    }
+
+    index_migrations = [
+        ("evaluation_runs", "ix_evaluation_runs_dataset_id", "CREATE INDEX IF NOT EXISTS ix_evaluation_runs_dataset_id ON evaluation_runs (dataset_id)"),
+        ("benchmark_reports", "ix_benchmark_reports_dataset_id", "CREATE INDEX IF NOT EXISTS ix_benchmark_reports_dataset_id ON benchmark_reports (dataset_id)"),
+        ("benchmark_results", "ix_benchmark_results_run_id", "CREATE INDEX IF NOT EXISTS ix_benchmark_results_run_id ON benchmark_results (run_id)"),
+    ]
+
+    with target_engine.connect() as conn:
+        for table, cols in column_migrations.items():
+            if table in table_names:
+                existing_cols = {col["name"] for col in inspector.get_columns(table)}
+                for col_name, col_type in cols:
+                    if col_name not in existing_cols:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
+
+        # Ensure indexes declared in ORM models exist on migrated tables
+        for table, idx_name, idx_sql in index_migrations:
+            if table in table_names:
+                conn.execute(text(idx_sql))
+
+        conn.commit()
+
 def init_db():
     """Initializes all database tables and seeds standard evaluation suites."""
-    import backend.app.db.models  # Ensure all models are imported
+    import backend.app.db.models  # noqa: F401 # Ensure all models are imported
     Base.metadata.create_all(bind=engine)
+    migrate_schema(engine)
     db = SessionLocal()
     try:
         seed_default_datasets(db)

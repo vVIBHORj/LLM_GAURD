@@ -1,8 +1,11 @@
 from datetime import datetime
-from typing import Optional, List
-from sqlalchemy import String, Integer, Float, Boolean, DateTime
+from typing import Optional, List, TYPE_CHECKING
+from sqlalchemy import String, Integer, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
+
+if TYPE_CHECKING:
+    from backend.app.db.models.evaluation import EvaluationRun
 
 class Model(Base):
     __tablename__ = "models"

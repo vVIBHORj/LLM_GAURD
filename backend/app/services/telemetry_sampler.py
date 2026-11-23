@@ -2,7 +2,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from backend.app.config import settings
 from backend.app.services.hardware_monitor import HardwareMonitor, hardware_monitor
 
@@ -55,6 +55,10 @@ class TelemetrySummary:
     peak_temperature_c: Optional[float]
     avg_power_w: Optional[float]
     peak_power_w: Optional[float]
+
+    # Hardware Provenance
+    gpu_name: Optional[str] = None
+    gpu_source: Optional[str] = None
 
     # Captured Sample Series
     samples: List[TelemetrySnapshot] = field(default_factory=list)
@@ -209,6 +213,11 @@ class TelemetrySampler:
         avg_power = (sum(powers) / len(powers)) if powers else None
         peak_power = max(powers) if powers else None
 
+        # Hardware provenance
+        gpu_info = self.monitor.sample_gpu() if hasattr(self.monitor, "sample_gpu") else {}
+        gpu_name = gpu_info.get("name") if gpu_info.get("available") else None
+        gpu_source = gpu_info.get("source") if gpu_info.get("available") else None
+
         return TelemetrySummary(
             run_id=self.run_id,
             sample_count=n,
@@ -228,6 +237,8 @@ class TelemetrySampler:
             peak_temperature_c=round(peak_temp, 1) if peak_temp is not None else None,
             avg_power_w=round(avg_power, 1) if avg_power is not None else None,
             peak_power_w=round(peak_power, 1) if peak_power is not None else None,
+            gpu_name=gpu_name,
+            gpu_source=gpu_source,
             samples=list(self.samples)
         )
 

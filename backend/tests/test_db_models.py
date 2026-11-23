@@ -1,11 +1,9 @@
-from datetime import datetime
 from backend.app.db.models.model import Model
 from backend.app.db.models.dataset import Dataset, DatasetTestCase
 from backend.app.db.models.experiment import Experiment
-from backend.app.db.models.evaluation import EvaluationRun, EvaluationResult
+from backend.app.db.models.evaluation import EvaluationRun
 from backend.app.db.models.metric import Metric
 from backend.app.db.models.security import SecurityTest
-from backend.app.db.models.benchmark import BenchmarkReport, BenchmarkResult
 
 def test_db_entities_lifecycle(db_session):
     # 1. Model

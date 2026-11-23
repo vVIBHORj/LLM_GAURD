@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from backend.app.schemas.benchmark import ParetoPoint, ModelBenchmarkScore
+from backend.app.schemas.benchmark import ParetoPoint
 
 class BenchmarkService:
     """
@@ -25,6 +25,7 @@ class BenchmarkService:
 
             pareto_points.append(ParetoPoint(
                 model_id=p1["model_id"],
+                run_id=p1.get("run_id"),
                 tokens_per_sec=round(p1["tokens_per_sec"], 1),
                 accuracy_rate=round(p1["accuracy_rate"], 2),
                 peak_vram_mb=round(p1.get("peak_vram_mb", 0.0), 1),

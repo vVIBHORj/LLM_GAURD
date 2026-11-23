@@ -1,12 +1,11 @@
 import uuid
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from backend.app.db.session import get_db
 from backend.app.db.models.evaluation import EvaluationRun, EvaluationResult
 from backend.app.db.models.model import Model
 from backend.app.db.models.dataset import Dataset
-from backend.app.db.models.metric import Metric
 from backend.app.core.queue import execution_queue
 from backend.app.schemas.common import APIResponse
 from backend.app.schemas.evaluation import (
@@ -41,6 +40,11 @@ async def submit_evaluation_run(payload: EvaluationRunCreate, db: Session = Depe
     run = EvaluationRun(
         id=run_id,
         model_id=payload.model_id,
+        dataset_id=payload.dataset_id,
+        temperature=payload.temperature,
+        num_predict=payload.num_predict,
+        num_ctx=payload.num_ctx,
+        concurrency=payload.concurrency,
         status="QUEUED"
     )
     db.add(run)

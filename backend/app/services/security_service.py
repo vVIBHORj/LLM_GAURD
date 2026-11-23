@@ -3,7 +3,6 @@ import logging
 import re
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from pathlib import Path
 import yaml
 import json
 import httpx
@@ -416,7 +415,6 @@ class SecurityService:
         """
         run_id = f"sec_{uuid.uuid4().hex[:8]}"
         config_path = settings.PROMPTFOO_CONFIG_DIR / f"{run_id}.yaml"
-        output_json_path = settings.PROMPTFOO_RUNS_DIR / f"{run_id}.json"
 
         # Ensure single model loaded
         await ollama_service.ensure_single_model(model_id)

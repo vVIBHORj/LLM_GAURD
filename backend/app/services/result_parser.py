@@ -32,7 +32,6 @@ class ResultParser:
         table = results_data.get("table", {})
         body = table.get("body", [])
         raw_items = results_data.get("results", [])
-        stats = results_data.get("stats", {})
 
         jsonl_artifact_path = settings.PROMPTFOO_RUNS_DIR / f"{run_id}.jsonl"
 

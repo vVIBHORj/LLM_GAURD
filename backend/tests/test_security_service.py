@@ -1,4 +1,3 @@
-import pytest
 from backend.app.services.security_service import security_service
 
 def test_evaluate_refusal_defense():

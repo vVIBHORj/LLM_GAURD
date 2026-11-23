@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import httpx
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from backend.app.config import settings
 from backend.app.core.exceptions import OllamaServiceException
 

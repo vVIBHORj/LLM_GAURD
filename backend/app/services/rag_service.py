@@ -2,10 +2,9 @@ import uuid
 import math
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Tuple
+from typing import List
 import httpx
 from backend.app.config import settings
-from backend.app.services.ollama_service import ollama_service
 from backend.app.schemas.rag import (
     RAGQueryEvaluation,
     RAGEvaluationReport,

@@ -1,9 +1,8 @@
 import yaml
 import asyncio
-import os
 import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from backend.app.services.promptfoo_service import promptfoo_service, PromptfooService, _kill_process_tree
 from backend.app.config import settings
 from backend.app.core.exceptions import PromptfooExecutionException
@@ -184,9 +183,9 @@ def test_run_evaluation_timeout_and_process_tree_termination(tmp_path):
 
         mock_proc = AsyncMock()
         mock_proc.pid = 66666
+        mock_proc.communicate.side_effect = asyncio.TimeoutError()
         # Simulate wait_for raising TimeoutError
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc), \
-             patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()), \
              patch("backend.app.services.promptfoo_service._kill_process_tree") as mock_kill:
 
             with pytest.raises(PromptfooExecutionException, match="timed out"):
@@ -208,9 +207,9 @@ def test_run_evaluation_cancellation_and_process_tree_termination(tmp_path):
 
         mock_proc = AsyncMock()
         mock_proc.pid = 55555
+        mock_proc.communicate.side_effect = asyncio.CancelledError()
         # Simulate task cancellation raising CancelledError during wait_for
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc), \
-             patch("asyncio.wait_for", side_effect=asyncio.CancelledError()), \
              patch("backend.app.services.promptfoo_service._kill_process_tree") as mock_kill:
 
             with pytest.raises(asyncio.CancelledError):

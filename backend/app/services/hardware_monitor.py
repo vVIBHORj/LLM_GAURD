@@ -5,7 +5,7 @@ import logging
 import time
 import psutil
 import httpx
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from backend.app.config import settings
 
 logger = logging.getLogger(__name__)

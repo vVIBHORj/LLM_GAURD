@@ -1,11 +1,9 @@
 import asyncio
-import subprocess
 from datetime import datetime
 from unittest.mock import patch, MagicMock
 import httpx
-import pytest
 
-from backend.app.services.hardware_monitor import HardwareMonitor, hardware_monitor
+from backend.app.services.hardware_monitor import HardwareMonitor
 from backend.app.core.hardware_gate import HardwareGate
 from backend.app.services.telemetry_sampler import TelemetrySampler, TelemetrySnapshot
 

@@ -1,7 +1,11 @@
 import uuid
+from typing import TYPE_CHECKING
 from sqlalchemy import String, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
+
+if TYPE_CHECKING:
+    from backend.app.db.models.evaluation import EvaluationRun
 
 class SecurityTest(Base):
     __tablename__ = "security_tests"

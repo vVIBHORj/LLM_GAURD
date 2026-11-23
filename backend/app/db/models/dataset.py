@@ -1,9 +1,12 @@
 from datetime import datetime
 import uuid
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
+
+if TYPE_CHECKING:
+    from backend.app.db.models.experiment import Experiment
 
 class Dataset(Base):
     __tablename__ = "datasets"

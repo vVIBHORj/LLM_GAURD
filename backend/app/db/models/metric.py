@@ -1,8 +1,11 @@
 import uuid
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from sqlalchemy import String, Float, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
+
+if TYPE_CHECKING:
+    from backend.app.db.models.evaluation import EvaluationRun
 
 class Metric(Base):
     __tablename__ = "metrics"

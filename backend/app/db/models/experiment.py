@@ -1,9 +1,13 @@
 from datetime import datetime
 import uuid
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from sqlalchemy import String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.app.db.base import Base
+
+if TYPE_CHECKING:
+    from backend.app.db.models.dataset import Dataset
+    from backend.app.db.models.evaluation import EvaluationRun
 
 class Experiment(Base):
     __tablename__ = "experiments"

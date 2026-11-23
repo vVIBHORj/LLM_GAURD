@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 from backend.app.services.result_parser import result_parser
 from backend.app.services.jsonl_storage import jsonl_storage
-from backend.app.config import settings
 
 def test_parse_promptfoo_output(tmp_path):
     run_id = "test-parser-run"
