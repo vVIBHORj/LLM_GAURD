@@ -55,6 +55,32 @@ flowchart TD
 
 ---
 
+## Dashboard Preview
+
+LocalLLM Guard provides a dark-mode interactive dashboard interface (`http://127.0.0.1:8000/dashboard` and React Vite UI) providing end-to-end visibility into evaluations, hardware telemetry, Pareto tradeoffs, and adversarial vulnerabilities.
+
+### System Overview & Live Telemetry
+Real-time monitoring of hardware health, GPU VRAM allocation, queue execution status, and run logs.
+
+![LocalLLM Guard Dashboard Overview](docs/images/dashboard_overview.png)
+
+### Multi-Model Pareto Frontier
+Dynamic trade-off analysis mapping accuracy vs. inference throughput (tokens/sec) with convex hull Pareto frontier visualization, GPU hardware provenance, and side-by-side model comparison cards.
+
+![Multi-Model Pareto Frontier](docs/images/pareto_frontier.png)
+
+### Adversarial Security & Red-Teaming Scanner
+Dual-engine vulnerability testing with real-time attack execution, reasoning token inspection, severity breakdown, and conservative 3-state verdict classification (`DEFENDED`, `VULNERABLE`, `UNKNOWN`).
+
+![Adversarial Red-Teaming Scanner](docs/images/security_scanner.png)
+
+### RAG Triad Reliability Engine
+Local document retrieval, chunk inspection, and groundedness evaluation measuring Context Relevance, Answer Faithfulness, and Answer Relevance with cosine similarity metrics.
+
+![RAG Triad Reliability Evaluation](docs/images/rag_evaluation.png)
+
+---
+
 ## Key Capabilities
 
 ### 1. Hardware-Aware Sequential Execution Queue
