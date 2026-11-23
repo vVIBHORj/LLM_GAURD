@@ -56,26 +56,36 @@ export interface Model {
 
 export interface ParetoPoint {
   model_id: string;
+  run_id?: string | null;
   tokens_per_sec: number;
   accuracy_rate: number;
-  peak_vram_mb: number;
+  peak_vram_mb?: number | null;
   is_pareto_optimal: boolean;
+}
+
+export interface ModelBenchmarkScore {
+  model_id: string;
+  run_id?: string | null;
+  status: 'BENCHMARKED' | 'UNBENCHMARKED' | 'INELIGIBLE' | string;
+  accuracy_score?: number | null;
+  speed_tokens_sec?: number | null;
+  avg_latency_ms?: number | null;
+  peak_vram_mb?: number | null;
+  peak_ollama_vram_mb?: number | null;
+  gpu_name?: string | null;
+  gpu_source?: string | null;
+  memory_efficiency_score?: number | null;
+  rank?: number | null;
 }
 
 export interface BenchmarkReport {
   id: string;
   title: string;
+  dataset_id?: string | null;
   model_ids: string[];
+  generation_config?: Record<string, any> | null;
   generated_at: string;
-  results: {
-    model_id: string;
-    accuracy_score: number;
-    speed_tokens_sec: number;
-    avg_latency_ms: number;
-    peak_vram_mb: number;
-    memory_efficiency_score: number;
-    rank: number;
-  }[];
+  results: ModelBenchmarkScore[];
   pareto_frontier: ParetoPoint[];
 }
 

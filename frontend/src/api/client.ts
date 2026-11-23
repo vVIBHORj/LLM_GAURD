@@ -25,7 +25,11 @@ export const api = {
   getEvaluations: () => fetchJSON<any>('/evaluations'),
   submitEvaluation: (data: any) => fetchJSON<any>('/evaluations', { method: 'POST', body: JSON.stringify(data) }),
   getEvaluationResults: (runId: string) => fetchJSON<any>(`/evaluations/${runId}/results`),
-  getBenchmarks: () => fetchJSON<any>('/benchmarks'),
+  getBenchmarks: (datasetId?: string) => {
+    const query = datasetId ? `?dataset_id=${encodeURIComponent(datasetId)}` : '';
+    return fetchJSON<any>(`/benchmarks${query}`);
+  },
+  getBenchmarkReport: (id: string) => fetchJSON<any>(`/benchmarks/${id}`),
   createBenchmark: (data: any) => fetchJSON<any>('/benchmarks', { method: 'POST', body: JSON.stringify(data) }),
   getSecurityVectors: () => fetchJSON<any>('/security/vectors'),
   scanSecurity: (data: any) => fetchJSON<any>('/security/scan', { method: 'POST', body: JSON.stringify(data) }),

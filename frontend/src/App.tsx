@@ -209,6 +209,10 @@ export const App: React.FC = () => {
               benchmarks={benchmarks}
               selectedModel={selectedModel}
               onNavigateTab={setActiveTab}
+              datasets={datasets}
+              models={models}
+              onSelectModel={setSelectedModel}
+              loading={loading}
             />
           )}
 

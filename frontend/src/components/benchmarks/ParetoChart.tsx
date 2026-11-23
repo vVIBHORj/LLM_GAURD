@@ -1,47 +1,91 @@
 import React, { useState } from 'react';
+import {
+  filterValidChartPoints,
+  calculateChartBounds,
+  sortParetoFrontier,
+  formatMetricNumber,
+  formatAccuracyPercent,
+} from './paretoUtils';
 
-export interface ParetoPointData {
+export interface ParetoChartPoint {
   model_id: string;
+  run_id?: string | null;
   tokens_per_sec: number;
   accuracy_rate: number;
-  vram_mb: number;
+  peak_vram_mb?: number | null;
+  peak_ollama_vram_mb?: number | null;
+  gpu_name?: string | null;
+  gpu_source?: string | null;
   is_pareto: boolean;
-  notes: string;
+  status: string;
 }
 
-const DEFAULT_POINTS: ParetoPointData[] = [
-  { model_id: 'llama3.2:latest', tokens_per_sec: 109.3, accuracy_rate: 0.92, vram_mb: 2200, is_pareto: true, notes: 'Fastest 3B inference in VRAM' },
-  { model_id: 'qwen3:4b', tokens_per_sec: 41.9, accuracy_rate: 0.91, vram_mb: 2500, is_pareto: true, notes: 'Optimal reasoning speed/quality' },
-  { model_id: 'qwen3:8b', tokens_per_sec: 14.7, accuracy_rate: 0.94, vram_mb: 5200, is_pareto: true, notes: 'Maximum reasoning depth' },
-  { model_id: 'qwen3:1.7b', tokens_per_sec: 70.0, accuracy_rate: 0.82, vram_mb: 1400, is_pareto: false, notes: 'Ultra-compact edge model' },
-  { model_id: 'qwen2.5:3b', tokens_per_sec: 55.0, accuracy_rate: 0.88, vram_mb: 1900, is_pareto: false, notes: 'Standard coding baseline' },
-];
+export interface ParetoChartProps {
+  points?: ParetoChartPoint[];
+  selectedModel?: string;
+  onSelectModel?: (modelId: string) => void;
+}
 
-export const ParetoChart: React.FC<{ points?: ParetoPointData[] }> = ({ points = DEFAULT_POINTS }) => {
-  const [hoveredPoint, setHoveredPoint] = useState<ParetoPointData | null>(null);
+function calculateTicks(min: number, max: number, count: number): number[] {
+  if (min === max) return [min];
+  const step = (max - min) / (count - 1);
+  const ticks: number[] = [];
+  for (let i = 0; i < count; i++) {
+    ticks.push(min + i * step);
+  }
+  return ticks;
+}
+
+export const ParetoChart: React.FC<ParetoChartProps> = ({
+  points = [],
+  selectedModel,
+  onSelectModel,
+}) => {
+  const [hoveredPoint, setHoveredPoint] = useState<ParetoChartPoint | null>(null);
+
+  // Filter only genuine measured benchmark points with valid numbers (rejects null, negative, NaN)
+  const validPoints = filterValidChartPoints(points);
 
   // SVG dimensions
   const width = 640;
   const height = 320;
-  const padding = { top: 30, right: 40, bottom: 50, left: 60 };
+  const padding = { top: 35, right: 45, bottom: 50, left: 60 };
 
   const plotW = width - padding.left - padding.right;
   const plotH = height - padding.top - padding.bottom;
 
-  // Max X: 120 t/s, Max Y: 1.0 (100%)
-  const maxX = 120;
-  const minX = 0;
-  const maxY = 1.0;
-  const minY = 0.7; // zoom in on meaningful accuracy range (70% - 100%)
+  // Empty state if no valid data
+  if (validPoints.length === 0) {
+    return (
+      <div className="w-full h-64 flex flex-col items-center justify-center border border-dashed border-white/10 rounded-lg p-6 text-center font-mono">
+        <div className="w-10 h-10 rounded-full bg-cyan-500/10 flex items-center justify-center text-cyan-400 mb-3">
+          📊
+        </div>
+        <div className="text-sm font-semibold text-gray-300">
+          No Empirical Benchmark Data Plotted
+        </div>
+        <p className="text-xs text-gray-500 mt-1 max-w-sm">
+          No models in the selected benchmark report have completed evaluations with valid throughput and accuracy measurements.
+        </p>
+      </div>
+    );
+  }
 
-  const scaleX = (val: number) => padding.left + ((val - minX) / (maxX - minX)) * plotW;
-  const scaleY = (val: number) => padding.top + plotH - ((val - minY) / (maxY - minY)) * plotH;
+  // Dynamic bounds calculation
+  const bounds = calculateChartBounds(validPoints);
+  const { minX, maxX, minY, maxY, spanX, spanY } = bounds;
 
-  // Sort pareto points by X for line rendering
-  const paretoPoints = points
-    .filter((p) => p.is_pareto)
-    .sort((a, b) => a.tokens_per_sec - b.tokens_per_sec);
+  const scaleX = (val: number) => padding.left + ((val - minX) / spanX) * plotW;
+  const scaleY = (val: number) => padding.top + plotH - ((val - minY) / spanY) * plotH;
 
+  // Generate 4-5 dynamic tick marks
+  const xTicks = calculateTicks(minX, maxX, 5);
+  const yTicks = calculateTicks(minY, maxY, 5);
+
+  // Extract non-dominated Pareto frontier points sorted in ascending throughput order
+  const paretoPoints = sortParetoFrontier(validPoints);
+
+  // Construct SVG path along the Pareto frontier
   const paretoPath = paretoPoints.reduce((acc, curr, idx) => {
     const x = scaleX(curr.tokens_per_sec);
     const y = scaleY(curr.accuracy_rate);
@@ -54,11 +98,18 @@ export const ParetoChart: React.FC<{ points?: ParetoPointData[] }> = ({ points =
         viewBox={`0 0 ${width} ${height}`}
         className="w-full h-auto overflow-visible select-none font-mono"
       >
-        {/* Subtle Grid Lines */}
-        {[0.75, 0.8, 0.85, 0.9, 0.95, 1.0].map((acc) => {
+        <defs>
+          <linearGradient id="pareto-gradient" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#10B981" />
+            <stop offset="100%" stopColor="#06B6D4" />
+          </linearGradient>
+        </defs>
+
+        {/* Dynamic Y Grid Lines & Labels */}
+        {yTicks.map((acc) => {
           const y = scaleY(acc);
           return (
-            <g key={acc}>
+            <g key={`y-${acc.toFixed(2)}`}>
               <line
                 x1={padding.left}
                 y1={y}
@@ -80,10 +131,11 @@ export const ParetoChart: React.FC<{ points?: ParetoPointData[] }> = ({ points =
           );
         })}
 
-        {[20, 40, 60, 80, 100, 120].map((speed) => {
+        {/* Dynamic X Grid Lines & Labels */}
+        {xTicks.map((speed) => {
           const x = scaleX(speed);
           return (
-            <g key={speed}>
+            <g key={`x-${speed.toFixed(1)}`}>
               <line
                 x1={x}
                 y1={padding.top}
@@ -99,13 +151,13 @@ export const ParetoChart: React.FC<{ points?: ParetoPointData[] }> = ({ points =
                 fontSize="10"
                 fill="#6B7280"
               >
-                {speed} t/s
+                {speed.toFixed(0)} t/s
               </text>
             </g>
           );
         })}
 
-        {/* Axes */}
+        {/* Main Axes */}
         <line
           x1={padding.left}
           y1={height - padding.bottom}
@@ -121,7 +173,7 @@ export const ParetoChart: React.FC<{ points?: ParetoPointData[] }> = ({ points =
           stroke="rgba(255, 255, 255, 0.15)"
         />
 
-        {/* Axis Labels */}
+        {/* Axis Titles */}
         <text
           x={width / 2}
           y={height - 12}
@@ -129,9 +181,9 @@ export const ParetoChart: React.FC<{ points?: ParetoPointData[] }> = ({ points =
           fontSize="11"
           fontWeight="500"
           fill="#9CA3AF"
-          fontFamily="Plus Jakarta Sans"
+          fontFamily="Plus Jakarta Sans, sans-serif"
         >
-          Generation Speed (Tokens / Second) →
+          Inference Throughput (Tokens / Second) →
         </text>
         <text
           x={18}
@@ -141,26 +193,19 @@ export const ParetoChart: React.FC<{ points?: ParetoPointData[] }> = ({ points =
           fontWeight="500"
           fill="#9CA3AF"
           transform={`rotate(-90 18 ${height / 2})`}
-          fontFamily="Plus Jakarta Sans"
+          fontFamily="Plus Jakarta Sans, sans-serif"
         >
-          Accuracy Rate →
+          Accuracy Rate (%) →
         </text>
 
-        {/* Pareto Frontier Curve Area fill */}
+        {/* Pareto Frontier Area fill (only if multiple pareto points) */}
         {paretoPoints.length > 1 && (
           <path
             d={`${paretoPath} L ${scaleX(paretoPoints[paretoPoints.length - 1].tokens_per_sec)} ${height - padding.bottom} L ${scaleX(paretoPoints[0].tokens_per_sec)} ${height - padding.bottom} Z`}
             fill="url(#pareto-gradient)"
-            opacity="0.12"
+            opacity="0.10"
           />
         )}
-
-        <defs>
-          <linearGradient id="pareto-gradient" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#10B981" />
-            <stop offset="100%" stopColor="#06B6D4" />
-          </linearGradient>
-        </defs>
 
         {/* Pareto Frontier Line */}
         {paretoPoints.length > 1 && (
@@ -170,35 +215,63 @@ export const ParetoChart: React.FC<{ points?: ParetoPointData[] }> = ({ points =
             stroke="#10B981"
             strokeWidth="2.5"
             strokeLinecap="round"
-            strokeDasharray="none"
             className="drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]"
           />
         )}
 
-        {/* Data Points */}
-        {points.map((p) => {
+        {/* Data Nodes */}
+        {validPoints.map((p) => {
           const cx = scaleX(p.tokens_per_sec);
           const cy = scaleY(p.accuracy_rate);
           const isHovered = hoveredPoint?.model_id === p.model_id;
+          const isSelected = selectedModel === p.model_id;
+
+          // Compute readable label positioning preventing clipping near edges
+          const labelY = cy - 12 < padding.top ? cy + 18 : cy - 12;
+          let textAnchor: 'start' | 'middle' | 'end' = 'middle';
+          let labelX = cx;
+          if (cx > width - padding.right - 35) {
+            textAnchor = 'end';
+            labelX = cx - 8;
+          } else if (cx < padding.left + 35) {
+            textAnchor = 'start';
+            labelX = cx + 8;
+          }
+
+          const shortName = p.model_id.replace(':latest', '');
 
           return (
             <g
               key={p.model_id}
-              className="cursor-pointer transition-transform duration-300"
+              className="cursor-pointer transition-transform duration-200"
               onMouseEnter={() => setHoveredPoint(p)}
               onMouseLeave={() => setHoveredPoint(null)}
+              onClick={() => onSelectModel && onSelectModel(p.model_id)}
             >
-              {/* Outer halo */}
+              {/* Outer pulsing halo for Pareto Optimal models */}
               {p.is_pareto && (
                 <circle
                   cx={cx}
                   cy={cy}
-                  r={isHovered ? 14 : 9}
+                  r={isHovered || isSelected ? 14 : 9}
                   fill="none"
                   stroke="#10B981"
                   strokeWidth="1.5"
-                  strokeOpacity={isHovered ? '0.7' : '0.3'}
+                  strokeOpacity={isHovered || isSelected ? '0.8' : '0.35'}
                   className="animate-pulse"
+                />
+              )}
+
+              {/* Selected model indicator ring */}
+              {isSelected && (
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={isHovered ? 18 : 13}
+                  fill="none"
+                  stroke="#38BDF8"
+                  strokeWidth="1.5"
+                  strokeDasharray="2 2"
                 />
               )}
 
@@ -206,59 +279,89 @@ export const ParetoChart: React.FC<{ points?: ParetoPointData[] }> = ({ points =
               <circle
                 cx={cx}
                 cy={cy}
-                r={isHovered ? 6 : 4.5}
-                fill={p.is_pareto ? '#10B981' : '#3B82F6'}
+                r={isHovered ? 6 : p.is_pareto ? 5 : 4}
+                fill={p.is_pareto ? '#10B981' : '#38BDF8'}
                 stroke="#090D15"
                 strokeWidth="2"
-                className="transition-all duration-300"
+                className="transition-all duration-200"
               />
 
-              {/* Point Label */}
+              {/* Model Label */}
               <text
-                x={cx}
-                y={cy - 12}
-                textAnchor="middle"
+                x={labelX}
+                y={labelY}
+                textAnchor={textAnchor}
                 fontSize="10"
                 fontWeight={p.is_pareto ? '600' : '400'}
                 fill={p.is_pareto ? '#34D399' : '#94A3B8'}
                 className="pointer-events-none"
               >
-                {p.model_id.split(':')[0]}
+                {shortName}
               </text>
             </g>
           );
         })}
       </svg>
 
-      {/* Floating Tooltip */}
+      {/* Floating Interactive Tooltip */}
       {hoveredPoint && (
         <div
-          className="absolute z-20 pointer-events-none doppelrand-shell -translate-x-1/2 -translate-y-full"
+          className="absolute z-30 pointer-events-none doppelrand-shell -translate-x-1/2 -translate-y-full"
           style={{
-            left: `${scaleX(hoveredPoint.tokens_per_sec)}px`,
-            top: `${scaleY(hoveredPoint.accuracy_rate) - 14}px`,
+            left: `${Math.max(100, Math.min(width - 100, scaleX(hoveredPoint.tokens_per_sec)))}px`,
+            top: `${Math.max(10, scaleY(hoveredPoint.accuracy_rate) - 14)}px`,
           }}
         >
-          <div className="doppelrand-core p-3 text-xs font-mono space-y-1 min-w-[180px]">
-            <div className="flex items-center justify-between font-bold text-gray-100">
-              <span>{hoveredPoint.model_id}</span>
-              {hoveredPoint.is_pareto && (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyber-emerald/20 text-cyber-emerald ring-1 ring-cyber-emerald/30">
-                  PARETO
-                </span>
-              )}
+          <div className="doppelrand-core p-3 text-xs font-mono space-y-1.5 min-w-[210px]">
+            <div className="flex items-center justify-between font-bold text-gray-100 pb-1 border-b border-white/[0.08]">
+              <span className="truncate max-w-[130px]">{hoveredPoint.model_id}</span>
+              <span
+                className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${
+                  hoveredPoint.is_pareto
+                    ? 'bg-cyber-emerald/20 text-cyber-emerald ring-1 ring-cyber-emerald/30'
+                    : 'bg-cyan-500/10 text-cyan-400 ring-1 ring-cyan-500/30'
+                }`}
+              >
+                {hoveredPoint.is_pareto ? 'PARETO OPTIMAL' : 'DOMINATED'}
+              </span>
             </div>
+
             <div className="text-gray-400 text-[11px] flex justify-between">
-              <span>Speed:</span>
-              <span className="text-cyan-400 font-semibold">{hoveredPoint.tokens_per_sec} t/s</span>
+              <span>Throughput:</span>
+              <span className="text-cyan-400 font-semibold">{formatMetricNumber(hoveredPoint.tokens_per_sec, 't/s', 1)}</span>
             </div>
             <div className="text-gray-400 text-[11px] flex justify-between">
               <span>Accuracy:</span>
-              <span className="text-emerald-400 font-semibold">{(hoveredPoint.accuracy_rate * 100).toFixed(0)}%</span>
+              <span className="text-emerald-400 font-semibold">
+                {formatAccuracyPercent(hoveredPoint.accuracy_rate)}
+              </span>
             </div>
-            <div className="text-gray-500 text-[10px] italic pt-1 border-t border-white/[0.04]">
-              {hoveredPoint.notes}
-            </div>
+
+            {hoveredPoint.peak_vram_mb != null && (
+              <div className="text-gray-400 text-[11px] flex justify-between">
+                <span>Peak GPU VRAM:</span>
+                <span className="text-gray-200">{formatMetricNumber(hoveredPoint.peak_vram_mb, 'MB', 0)}</span>
+              </div>
+            )}
+
+            {hoveredPoint.peak_ollama_vram_mb != null && (
+              <div className="text-gray-400 text-[11px] flex justify-between">
+                <span>Model VRAM:</span>
+                <span className="text-purple-300">{formatMetricNumber(hoveredPoint.peak_ollama_vram_mb, 'MB', 0)}</span>
+              </div>
+            )}
+
+            {hoveredPoint.gpu_name && (
+              <div className="text-gray-500 text-[10px] pt-1 border-t border-white/[0.04] truncate">
+                GPU: {hoveredPoint.gpu_name} {hoveredPoint.gpu_source ? `(${hoveredPoint.gpu_source})` : ''}
+              </div>
+            )}
+
+            {hoveredPoint.run_id && (
+              <div className="text-gray-600 text-[9px] truncate">
+                Run: {hoveredPoint.run_id}
+              </div>
+            )}
           </div>
         </div>
       )}
