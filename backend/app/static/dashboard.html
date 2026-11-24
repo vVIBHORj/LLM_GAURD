@@ -181,6 +181,10 @@
           Overview
           <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
         </h2>
+        <span id="telemetry-conn-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono ring-1 font-semibold text-emerald-400 bg-emerald-500/10 ring-emerald-500/30 flex items-center gap-1.5">
+          <span id="telemetry-conn-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="telemetry-conn-text">LIVE</span>
+        </span>
       </div>
 
       <div class="flex items-center space-x-4">
@@ -309,10 +313,10 @@
           <div class="doppelrand-shell">
             <div class="doppelrand-core p-5">
               <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider">PEAK LOCAL SPEED</div>
-              <div class="text-3xl font-bold mt-2 text-cyan-400 font-mono">109.3 <span class="text-xs text-gray-400 font-sans font-normal">t/s</span></div>
+              <div id="overview-peak-speed" class="text-3xl font-bold mt-2 text-cyan-400 font-mono">— <span class="text-xs text-gray-400 font-sans font-normal">t/s</span></div>
               <div class="mt-3 flex items-center justify-between text-xs text-gray-400 border-t border-white/[0.04] pt-2 font-mono">
-                <span>Llama 3.2 (3B)</span>
-                <span class="text-emerald-400">Full GPU</span>
+                <span id="overview-peak-model">No Benchmark Runs</span>
+                <span id="overview-peak-status" class="text-gray-500">Unmeasured</span>
               </div>
             </div>
           </div>
@@ -331,7 +335,7 @@
           <div class="doppelrand-shell">
             <div class="doppelrand-core p-5">
               <div class="text-[11px] font-mono text-gray-500 uppercase tracking-wider">PARETO COMPLIANCE</div>
-              <div class="text-3xl font-bold mt-2 text-emerald-400 font-mono">3 <span class="text-xs text-gray-400 font-sans font-normal">Models</span></div>
+              <div id="overview-pareto-count" class="text-3xl font-bold mt-2 text-emerald-400 font-mono">— <span class="text-xs text-gray-400 font-sans font-normal">Models</span></div>
               <div class="mt-3 flex items-center justify-between text-xs text-gray-400 border-t border-white/[0.04] pt-2 font-mono">
                 <span>Non-Dominated</span>
                 <span class="text-emerald-400 text-[11px] cursor-pointer" onclick="switchTab('benchmarks')">View Map →</span>
@@ -397,12 +401,12 @@
                 <p class="text-xs text-gray-400 mt-0.5">Automated YAML test suites executed over IPv4 http://127.0.0.1:11434.</p>
               </div>
               <div class="flex gap-2">
-                <button onclick="runRigorousEval('Promptfoo Rigorous Security Suite')" class="island-btn bg-cyan-600 hover:bg-cyan-500 text-white font-bold group">
-                  <span>Run Security Suite</span>
+                <button id="btn-run-sec-suite" onclick="runRigorousEval('Promptfoo Rigorous Security Suite')" class="island-btn bg-cyan-600 hover:bg-cyan-500 text-white font-bold group">
+                  <span id="btn-sec-suite-text">Run Security Suite</span>
                   <span class="btn-badge-icon bg-white/20">🛡️</span>
                 </button>
-                <button onclick="runRigorousEval('Instruction Following & Reasoning Suite')" class="island-btn bg-emerald-600 hover:bg-emerald-500 text-white font-bold group">
-                  <span>Run Reasoning Suite</span>
+                <button id="btn-run-reason-suite" onclick="runRigorousEval('Instruction Following & Reasoning Suite')" class="island-btn bg-emerald-600 hover:bg-emerald-500 text-white font-bold group">
+                  <span id="btn-reason-suite-text">Run Reasoning Suite</span>
                   <span class="btn-badge-icon bg-white/20">🧠</span>
                 </button>
               </div>
@@ -541,6 +545,74 @@
     let activeDatasets = [];
     let currentSecurityEngine = 'promptfoo';
 
+    // -------------------------------------------------------------
+    // Core Utilities: HTML Escaping & Centralized Safe API Helper
+    // -------------------------------------------------------------
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function apiCall(url, options = {}) {
+      let res;
+      try {
+        res = await fetch(url, options);
+      } catch (err) {
+        throw new Error(`Network failure or backend unreachable: ${err?.message || 'Connection refused'}`);
+      }
+
+      let payload = null;
+      const contentType = res.headers ? (res.headers.get('content-type') || '') : '';
+      if (contentType.includes('application/json')) {
+        try {
+          payload = await res.json();
+        } catch {
+          payload = null;
+        }
+      } else {
+        let textBody = '';
+        try { textBody = await res.text(); } catch {}
+        if (!res.ok) {
+          throw new Error(`Server returned HTTP ${res.status}: ${textBody.slice(0, 150) || res.statusText}`);
+        }
+      }
+
+      if (!res.ok) {
+        let errorMsg = `HTTP ${res.status}`;
+        if (payload && payload.detail) {
+          if (Array.isArray(payload.detail)) {
+            errorMsg = payload.detail.map(d => {
+              const loc = Array.isArray(d.loc) ? d.loc.filter(x => x !== 'body').join('.') : '';
+              return (loc ? `${loc}: ` : '') + (d.msg || JSON.stringify(d));
+            }).join('; ');
+          } else if (typeof payload.detail === 'string') {
+            errorMsg = payload.detail;
+          } else {
+            errorMsg = JSON.stringify(payload.detail);
+          }
+        } else if (payload && payload.message) {
+          errorMsg = payload.message;
+        } else if (payload && payload.error) {
+          errorMsg = payload.error;
+        } else {
+          errorMsg = `Server returned HTTP ${res.status} (${res.statusText || 'Error'})`;
+        }
+        // Sanitize out any server paths or stack lines if present
+        errorMsg = errorMsg.replace(/[A-Za-z]:\\[^:\s]+/g, '[redacted_path]');
+        throw new Error(errorMsg);
+      }
+
+      if (payload && typeof payload === 'object' && 'data' in payload) {
+        return payload.data;
+      }
+      return payload;
+    }
+
     function setSecEngine(eng) {
       currentSecurityEngine = eng;
       const btnPf = document.getElementById('sec-btn-pf');
@@ -583,23 +655,56 @@
       document.getElementById('current-tab-title').textContent = tabId;
     }
 
-    // Polling Telemetry
+    // Polling Telemetry State & Indicators
+    let lastTelemetrySuccessTime = null;
+    let telemetryConsecutiveFails = 0;
+
+    function renderTelemetryConnectionState(state, message = '') {
+      const badge = document.getElementById('telemetry-conn-badge');
+      const dot = document.getElementById('telemetry-conn-dot');
+      const text = document.getElementById('telemetry-conn-text');
+      if (!badge || !dot || !text) return;
+
+      if (state === 'CONNECTED') {
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono ring-1 font-semibold text-emerald-400 bg-emerald-500/10 ring-emerald-500/30 flex items-center gap-1.5';
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse';
+        text.textContent = 'LIVE';
+      } else if (state === 'STALE') {
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono ring-1 font-semibold text-amber-400 bg-amber-500/10 ring-amber-500/30 flex items-center gap-1.5';
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        text.textContent = message || 'STALE';
+      } else {
+        badge.className = 'px-2 py-0.5 rounded-full text-[10px] font-mono ring-1 font-semibold text-rose-400 bg-rose-500/10 ring-rose-500/30 flex items-center gap-1.5';
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-rose-400';
+        text.textContent = message || 'DISCONNECTED';
+      }
+    }
+
     async function updateTelemetry() {
       try {
-        const res = await fetch('/api/v1/monitoring/telemetry');
-        const data = (await res.json()).data;
+        const data = await apiCall('/api/v1/monitoring/telemetry');
         if (!data) return;
 
-        document.getElementById('cpu-pct').textContent = `${data.cpu.usage_percent.toFixed(1)}%`;
-        document.getElementById('cpu-bar').style.width = `${Math.min(100, Math.max(2, data.cpu.usage_percent))}%`;
+        lastTelemetrySuccessTime = Date.now();
+        telemetryConsecutiveFails = 0;
+        renderTelemetryConnectionState('CONNECTED');
 
-        document.getElementById('ram-pct').textContent = `${data.ram.used_percent.toFixed(1)}%`;
-        document.getElementById('ram-bar').style.width = `${Math.min(100, Math.max(2, data.ram.used_percent))}%`;
-        document.getElementById('ram-free').textContent = `${(data.ram.free_mb / 1024).toFixed(1)} GB Free of ${(data.ram.total_mb / 1024).toFixed(1)} GB`;
+        const cpuUsage = data.cpu?.usage_percent ?? 0;
+        document.getElementById('cpu-pct').textContent = `${cpuUsage.toFixed(1)}%`;
+        document.getElementById('cpu-bar').style.width = `${Math.min(100, Math.max(2, cpuUsage))}%`;
 
-        document.getElementById('vram-pct').textContent = `${data.gpu.vram_usage_percent.toFixed(1)}%`;
-        document.getElementById('vram-bar').style.width = `${Math.min(100, Math.max(2, data.gpu.vram_usage_percent))}%`;
-        document.getElementById('vram-free').textContent = `${data.gpu.allocated_mb.toFixed(0)} / 4096 MB`;
+        const ramUsed = data.ram?.used_percent ?? 0;
+        const ramFree = data.ram?.free_mb ?? 0;
+        const ramTotal = data.ram?.total_mb ?? 0;
+        document.getElementById('ram-pct').textContent = `${ramUsed.toFixed(1)}%`;
+        document.getElementById('ram-bar').style.width = `${Math.min(100, Math.max(2, ramUsed))}%`;
+        document.getElementById('ram-free').textContent = `${(ramFree / 1024).toFixed(1)} GB Free of ${(ramTotal / 1024).toFixed(1)} GB`;
+
+        const vramUsage = data.gpu?.vram_usage_percent ?? 0;
+        const vramAlloc = data.gpu?.allocated_mb ?? 0;
+        document.getElementById('vram-pct').textContent = `${vramUsage.toFixed(1)}%`;
+        document.getElementById('vram-bar').style.width = `${Math.min(100, Math.max(2, vramUsage))}%`;
+        document.getElementById('vram-free').textContent = `${vramAlloc.toFixed(0)} / 4096 MB`;
 
         const safetyPill = document.getElementById('safety-pill');
         const safetyText = document.getElementById('safety-text');
@@ -610,16 +715,45 @@
         } else {
           safetyPill.className = 'px-2 py-0.5 rounded-full text-[9px] font-mono ring-1 font-semibold text-rose-400 bg-rose-500/10 ring-rose-500/30';
           safetyPill.textContent = '■ THROTTLED';
-          safetyText.textContent = 'Memory Gate Active';
+          safetyText.textContent = escapeHtml(data.reason || 'Memory Gate Active');
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        telemetryConsecutiveFails++;
+        console.warn('Telemetry polling notice:', e.message);
+
+        // Do not overwrite existing gauge values with artificial zeroes
+        const safetyPill = document.getElementById('safety-pill');
+        const safetyText = document.getElementById('safety-text');
+
+        if (lastTelemetrySuccessTime && (Date.now() - lastTelemetrySuccessTime) < 15000) {
+          // If we had a recent reading within 15s, mark as STALE with elapsed time
+          const elapsedSec = Math.round((Date.now() - lastTelemetrySuccessTime) / 1000);
+          renderTelemetryConnectionState('STALE', `STALE (${elapsedSec}s)`);
+          if (safetyPill) {
+            safetyPill.className = 'px-2 py-0.5 rounded-full text-[9px] font-mono ring-1 font-semibold text-amber-400 bg-amber-500/10 ring-amber-500/30';
+            safetyPill.textContent = '▲ STALE';
+          }
+          if (safetyText) {
+            safetyText.textContent = `Telemetry Delayed (${elapsedSec}s ago)`;
+          }
+        } else {
+          // Outdated or never received: mark DISCONNECTED
+          renderTelemetryConnectionState('DISCONNECTED');
+          if (safetyPill) {
+            safetyPill.className = 'px-2 py-0.5 rounded-full text-[9px] font-mono ring-1 font-semibold text-rose-400 bg-rose-500/10 ring-rose-500/30';
+            safetyPill.textContent = '✕ OFFLINE';
+          }
+          if (safetyText) {
+            safetyText.textContent = 'Telemetry Backend Disconnected';
+          }
+        }
+      }
     }
 
     // Load Models
     async function loadModels() {
       try {
-        const res = await fetch('/api/v1/models');
-        const models = (await res.json()).data || [];
+        const models = (await apiCall('/api/v1/models')) || [];
         const tbody = document.getElementById('models-table-body');
         tbody.innerHTML = '';
 
@@ -634,9 +768,9 @@
           const row = document.createElement('tr');
           row.className = 'hover:bg-white/[0.02] transition-colors';
           row.innerHTML = `
-            <td class="py-3 font-semibold text-gray-200">${m.name}</td>
-            <td class="text-gray-300 font-bold">${m.parameter_size || '3B'}</td>
-            <td class="text-gray-400">${m.quantization || 'Q4_K_M'}</td>
+            <td class="py-3 font-semibold text-gray-200">${escapeHtml(m.name)}</td>
+            <td class="text-gray-300 font-bold">${escapeHtml(m.parameter_size || '3B')}</td>
+            <td class="text-gray-400">${escapeHtml(m.quantization || 'Q4_K_M')}</td>
             <td class="text-gray-300">${sizeGb} GB</td>
             <td>
               <span class="px-2 py-0.5 rounded-full text-[10px] font-mono ring-1 ${isLarge ? 'text-amber-400 bg-amber-500/10 ring-amber-500/30' : 'text-emerald-400 bg-emerald-500/10 ring-emerald-500/30'}">
@@ -649,29 +783,89 @@
           // Card
           const card = document.createElement('div');
           card.className = 'doppelrand-shell';
-          card.innerHTML = `
-            <div class="doppelrand-core p-5 space-y-3">
-              <div class="flex justify-between items-center">
-                <span class="text-xs font-mono font-bold text-cyan-400">${m.parameter_size || 'LLM'}</span>
-                <span class="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.06] text-gray-300 font-mono">${m.quantization || 'Q4'}</span>
-              </div>
-              <h3 class="text-base font-bold text-gray-100 font-mono">${m.name}</h3>
-              <div class="space-y-1 text-xs font-mono text-gray-400">
-                <div class="flex justify-between"><span>Context Limit:</span><span class="text-gray-300">${m.context_window_default || 2048} tokens</span></div>
-                <div class="flex justify-between"><span>Footprint:</span><span class="text-gray-300">${sizeGb} GB</span></div>
-              </div>
-              <div class="pt-2 border-t border-white/[0.04] flex justify-between items-center text-xs">
-                <span class="text-emerald-400 font-mono text-[11px]">● AVAILABLE</span>
-                <button onclick="document.getElementById('model-select').value='${m.id}'; switchTab('security');" class="island-btn bg-white/[0.06] hover:bg-white/[0.12] text-white text-[11px]">
-                  <span>Audit</span>
-                </button>
-              </div>
-            </div>
+          const cardCore = document.createElement('div');
+          cardCore.className = 'doppelrand-core p-5 space-y-3';
+
+          const topRow = document.createElement('div');
+          topRow.className = 'flex justify-between items-center';
+          const paramSpan = document.createElement('span');
+          paramSpan.className = 'text-xs font-mono font-bold text-cyan-400';
+          paramSpan.textContent = m.parameter_size || 'LLM';
+          const quantSpan = document.createElement('span');
+          quantSpan.className = 'text-[10px] px-2 py-0.5 rounded-full bg-white/[0.06] text-gray-300 font-mono';
+          quantSpan.textContent = m.quantization || 'Q4';
+          topRow.appendChild(paramSpan);
+          topRow.appendChild(quantSpan);
+          cardCore.appendChild(topRow);
+
+          const titleH3 = document.createElement('h3');
+          titleH3.className = 'text-base font-bold text-gray-100 font-mono';
+          titleH3.textContent = m.name;
+          cardCore.appendChild(titleH3);
+
+          const metaDiv = document.createElement('div');
+          metaDiv.className = 'space-y-1 text-xs font-mono text-gray-400';
+          metaDiv.innerHTML = `
+            <div class="flex justify-between"><span>Context Limit:</span><span class="text-gray-300">${escapeHtml(m.context_window_default || 2048)} tokens</span></div>
+            <div class="flex justify-between"><span>Footprint:</span><span class="text-gray-300">${sizeGb} GB</span></div>
           `;
+          cardCore.appendChild(metaDiv);
+
+          const footerDiv = document.createElement('div');
+          footerDiv.className = 'pt-2 border-t border-white/[0.04] flex justify-between items-center text-xs';
+          const availSpan = document.createElement('span');
+          availSpan.className = 'text-emerald-400 font-mono text-[11px]';
+          availSpan.textContent = '● AVAILABLE';
+          const auditBtn = document.createElement('button');
+          auditBtn.className = 'island-btn bg-white/[0.06] hover:bg-white/[0.12] text-white text-[11px]';
+          auditBtn.innerHTML = '<span>Audit</span>';
+          auditBtn.addEventListener('click', () => {
+            const sel = document.getElementById('model-select');
+            if (sel) sel.value = m.id;
+            switchTab('security');
+          });
+          footerDiv.appendChild(availSpan);
+          footerDiv.appendChild(auditBtn);
+          cardCore.appendChild(footerDiv);
+
+          card.appendChild(cardCore);
           cardsGrid.appendChild(card);
         });
         document.getElementById('overview-model-count').textContent = models.length;
-      } catch (e) { console.error(e); }
+
+        // Dynamically populate model-select dropdown
+        const modelSelect = document.getElementById('model-select');
+        if (modelSelect) {
+          const currentVal = modelSelect.value;
+          modelSelect.innerHTML = '';
+          if (models.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'No models registered';
+            opt.className = 'bg-oled-900';
+            modelSelect.appendChild(opt);
+          } else {
+            let foundSelected = false;
+            models.forEach(m => {
+              const opt = document.createElement('option');
+              opt.value = m.id;
+              opt.className = 'bg-oled-900';
+              const paramText = m.parameter_size ? ` (${m.parameter_size})` : '';
+              opt.textContent = `${m.name}${paramText}`;
+              if (m.id === currentVal) {
+                opt.selected = true;
+                foundSelected = true;
+              }
+              modelSelect.appendChild(opt);
+            });
+            if (!foundSelected && models.length > 0) {
+              modelSelect.value = models[0].id;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error loading models:', e);
+      }
     }
 
     // Sync Models
@@ -681,10 +875,10 @@
       text.textContent = 'Syncing...';
       btn.disabled = true;
       try {
-        await fetch('/api/v1/models/sync', { method: 'POST' });
+        await apiCall('/api/v1/models/sync', { method: 'POST' });
         await loadModels();
       } catch (e) {
-        alert("Sync error: " + e);
+        alert("Sync error: " + e.message);
       } finally {
         text.textContent = 'Sync Ollama';
         btn.disabled = false;
@@ -694,27 +888,92 @@
     // Load Datasets
     async function loadDatasets() {
       try {
-        const res = await fetch('/api/v1/datasets');
-        activeDatasets = (await res.json()).data || [];
-      } catch (e) { console.error(e); }
+        activeDatasets = (await apiCall('/api/v1/datasets')) || [];
+      } catch (e) {
+        console.error('Error loading datasets:', e);
+      }
     }
 
-    // Run Promptfoo Evaluation
+    // -------------------------------------------------------------
+    // Hardened Evaluation Submission & Single-Scope Polling
+    // -------------------------------------------------------------
+    let currentEvaluationState = {
+      runId: null,
+      timeoutHandle: null,
+      pollStartTime: null,
+      isSubmitting: false,
+      consecutiveErrors: 0
+    };
+
+    const EVAL_MAX_POLL_MS = 600000; // 10 minutes max polling duration for sequential queue
+    const EVAL_POLL_INTERVAL_MS = 2000;
+    const EVAL_MAX_CONSECUTIVE_ERRORS = 3;
+
+    function resetEvaluationWorkflow(clearStatusCard = false) {
+      if (currentEvaluationState.timeoutHandle) {
+        clearTimeout(currentEvaluationState.timeoutHandle);
+        currentEvaluationState.timeoutHandle = null;
+      }
+      currentEvaluationState.runId = null;
+      currentEvaluationState.pollStartTime = null;
+      currentEvaluationState.isSubmitting = false;
+      currentEvaluationState.consecutiveErrors = 0;
+
+      const secBtn = document.getElementById('btn-run-sec-suite');
+      const reasonBtn = document.getElementById('btn-run-reason-suite');
+      if (secBtn) secBtn.disabled = false;
+      if (reasonBtn) reasonBtn.disabled = false;
+
+      if (clearStatusCard) {
+        const statusCard = document.getElementById('eval-status-card');
+        if (statusCard) statusCard.classList.add('hidden');
+      }
+    }
+
     async function runRigorousEval(suiteName) {
-      const model = document.getElementById('model-select').value;
+      if (currentEvaluationState.isSubmitting || currentEvaluationState.runId) {
+        alert('An evaluation is already in progress. Please wait for it to complete.');
+        return;
+      }
+
+      const modelSelect = document.getElementById('model-select');
+      const model = modelSelect ? modelSelect.value : '';
+      if (!model) {
+        alert('Please select a valid model before running an evaluation.');
+        return;
+      }
+
+      if (!activeDatasets || activeDatasets.length === 0) {
+        await loadDatasets();
+      }
       const targetDataset = activeDatasets.find(d => d.name === suiteName);
-      if (!targetDataset) {
-        alert(`Dataset '${suiteName}' not found. Make sure backend is running.`);
+      if (!targetDataset || !targetDataset.id) {
+        alert(`Dataset '${suiteName}' was not found. Please ensure the backend is initialized.`);
         return;
       }
 
       const statusCard = document.getElementById('eval-status-card');
-      statusCard.classList.remove('hidden');
-      document.getElementById('eval-run-title').textContent = `Evaluating: ${suiteName}`;
-      document.getElementById('eval-run-desc').textContent = `Target: ${model} | Subprocess worker spawned over 127.0.0.1:11434`;
+      const badge = document.getElementById('eval-run-badge');
+      const title = document.getElementById('eval-run-title');
+      const desc = document.getElementById('eval-run-desc');
+      const resultsContainer = document.getElementById('eval-results-container');
+      const secBtn = document.getElementById('btn-run-sec-suite');
+      const reasonBtn = document.getElementById('btn-run-reason-suite');
 
+      statusCard.classList.remove('hidden');
+      resultsContainer.innerHTML = '';
+      title.textContent = `Evaluating: ${suiteName}`;
+      badge.className = 'px-2 py-0.5 rounded-full text-xs font-mono bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-500/40';
+      badge.textContent = 'SUBMITTING';
+      desc.textContent = `Target: ${model} | Submitting run to sequential queue...`;
+
+      currentEvaluationState.isSubmitting = true;
+      if (secBtn) secBtn.disabled = true;
+      if (reasonBtn) reasonBtn.disabled = true;
+
+      let runData;
       try {
-        const res = await fetch('/api/v1/evaluations', {
+        runData = await apiCall('/api/v1/evaluations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -724,47 +983,163 @@
             concurrency: 1
           })
         });
-        const runData = (await res.json()).data;
-        const runId = runData.id;
+      } catch (submitErr) {
+        badge.className = 'px-2 py-0.5 rounded-full text-xs font-mono bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40';
+        badge.textContent = 'SUBMISSION FAILED';
+        desc.textContent = `Submission error: ${submitErr.message}`;
+        resetEvaluationWorkflow(false);
+        return;
+      }
 
-        const pollInterval = setInterval(async () => {
-          const checkRes = await fetch(`/api/v1/evaluations/${runId}`);
-          const run = (await checkRes.json()).data;
-          document.getElementById('eval-run-badge').textContent = run.status;
-          if (run.status === 'COMPLETED' || run.status === 'FAILED') {
-            clearInterval(pollInterval);
-            document.getElementById('eval-run-desc').textContent = `Duration: ${run.total_duration_seconds?.toFixed(1) || 0}s | Throughput: ${run.tokens_per_second_avg?.toFixed(1) || 0} t/s | Accuracy: ${(run.accuracy_rate * 100).toFixed(0)}%`;
+      currentEvaluationState.isSubmitting = false;
+      const runId = runData?.id;
+      if (!runId || typeof runId !== 'string') {
+        badge.className = 'px-2 py-0.5 rounded-full text-xs font-mono bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40';
+        badge.textContent = 'INVALID RESPONSE';
+        desc.textContent = 'Backend did not return a valid evaluation run ID.';
+        resetEvaluationWorkflow(false);
+        return;
+      }
 
-            const resultsRes = await fetch(`/api/v1/evaluations/${runId}/results`);
-            const results = (await resultsRes.json()).data || [];
-            const container = document.getElementById('eval-results-container');
-            container.innerHTML = `
-              <div class="doppelrand-shell">
-                <div class="doppelrand-core p-6 space-y-3">
-                  <h4 class="text-xs font-bold uppercase tracking-wider text-gray-300">Test Execution Ledger (${results.length} Assertions)</h4>
-                  ${results.map(r => `
-                    <div class="p-3.5 bg-oled-950/70 border border-white/[0.04] rounded-xl text-xs space-y-1">
-                      <div class="flex justify-between items-center">
-                        <span class="font-bold text-gray-200 font-mono">Prompt: "${r.prompt_text || 'Test'}"</span>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-mono ring-1 ${r.passed ? 'text-emerald-400 bg-emerald-500/10 ring-emerald-500/30' : 'text-rose-400 bg-rose-500/10 ring-rose-500/30'}">
-                          ${r.passed ? 'PASSED' : 'FAILED'}
-                        </span>
-                      </div>
-                      <div class="text-gray-300 font-mono bg-oled-900/80 p-2 rounded text-[11px]">Output: "${r.raw_output || ''}"</div>
-                      <div class="text-gray-500 text-[10px] font-mono flex gap-4 pt-1">
-                        <span>Latency: ${r.latency_ms.toFixed(0)}ms</span>
-                        <span>Tokens: ${r.completion_tokens || 0}</span>
-                      </div>
-                    </div>
-                  `).join('')}
+      currentEvaluationState.runId = runId;
+      currentEvaluationState.pollStartTime = Date.now();
+      badge.textContent = runData.status || 'QUEUED';
+      desc.textContent = `Target: ${model} | Run ID: ${runId} | Waiting in sequential worker queue...`;
+
+      // Begin safe recursive polling
+      pollEvaluation(runId);
+    }
+
+    async function pollEvaluation(activeRunId) {
+      if (!activeRunId || currentEvaluationState.runId !== activeRunId) {
+        return; // Stale polling callback from older or cancelled run
+      }
+
+      const elapsed = Date.now() - (currentEvaluationState.pollStartTime || Date.now());
+      if (elapsed > EVAL_MAX_POLL_MS) {
+        const badge = document.getElementById('eval-run-badge');
+        const desc = document.getElementById('eval-run-desc');
+        if (badge) {
+          badge.className = 'px-2 py-0.5 rounded-full text-xs font-mono bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40';
+          badge.textContent = 'POLL TIMEOUT';
+        }
+        if (desc) {
+          desc.textContent = `Dashboard polling stopped after ${Math.round(elapsed / 1000)}s. The backend evaluation may still be executing in the background.`;
+        }
+        resetEvaluationWorkflow(false);
+        return;
+      }
+
+      try {
+        const run = await apiCall(`/api/v1/evaluations/${encodeURIComponent(activeRunId)}`);
+        if (currentEvaluationState.runId !== activeRunId) return;
+
+        // Reset consecutive error count on successful poll response
+        currentEvaluationState.consecutiveErrors = 0;
+
+        const badge = document.getElementById('eval-run-badge');
+        const desc = document.getElementById('eval-run-desc');
+        if (badge && run?.status) {
+          badge.textContent = run.status;
+          if (run.status === 'RUNNING') {
+            badge.className = 'px-2 py-0.5 rounded-full text-xs font-mono bg-blue-500/20 text-blue-300 ring-1 ring-blue-500/40';
+          } else if (run.status === 'QUEUED') {
+            badge.className = 'px-2 py-0.5 rounded-full text-xs font-mono bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40';
+          }
+        }
+
+        const terminalStatuses = ['COMPLETED', 'FAILED', 'CANCELLED'];
+        if (terminalStatuses.includes(run?.status)) {
+          if (run.status === 'COMPLETED') {
+            if (badge) badge.className = 'px-2 py-0.5 rounded-full text-xs font-mono bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40';
+            const duration = typeof run.total_duration_seconds === 'number' ? run.total_duration_seconds.toFixed(1) : '0';
+            const tps = typeof run.tokens_per_second_avg === 'number' ? run.tokens_per_second_avg.toFixed(1) : '0';
+            const accuracy = typeof run.accuracy_rate === 'number' ? (run.accuracy_rate * 100).toFixed(0) : '0';
+            if (desc) desc.textContent = `Duration: ${duration}s | Throughput: ${tps} t/s | Accuracy: ${accuracy}%`;
+
+            // Fetch assertion ledger
+            try {
+              const results = (await apiCall(`/api/v1/evaluations/${encodeURIComponent(activeRunId)}/results`)) || [];
+              renderEvaluationResults(results);
+            } catch (resErr) {
+              const container = document.getElementById('eval-results-container');
+              if (container) {
+                container.innerHTML = `<div class="p-4 text-xs font-mono text-amber-400">Run completed, but failed to load assertion results: ${escapeHtml(resErr.message)}</div>`;
+              }
+            }
+          } else {
+            if (badge) badge.className = 'px-2 py-0.5 rounded-full text-xs font-mono bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40';
+            if (desc) desc.textContent = `Evaluation finished with status ${run.status}: ${escapeHtml(run.error_message || 'No additional details provided.')}`;
+          }
+
+          resetEvaluationWorkflow(false);
+          return;
+        }
+
+        // Schedule next poll recursively
+        currentEvaluationState.timeoutHandle = setTimeout(() => {
+          pollEvaluation(activeRunId);
+        }, EVAL_POLL_INTERVAL_MS);
+
+      } catch (pollErr) {
+        if (currentEvaluationState.runId !== activeRunId) return;
+
+        currentEvaluationState.consecutiveErrors = (currentEvaluationState.consecutiveErrors || 0) + 1;
+        const retryCount = currentEvaluationState.consecutiveErrors;
+        console.warn(`Polling notice for run ${activeRunId} (attempt ${retryCount}/${EVAL_MAX_CONSECUTIVE_ERRORS}):`, pollErr.message);
+
+        const desc = document.getElementById('eval-run-desc');
+
+        if (retryCount < EVAL_MAX_CONSECUTIVE_ERRORS) {
+          // Bounded retry with backoff for transient connection blips
+          if (desc) {
+            desc.textContent = `Temporary connection blip (${escapeHtml(pollErr.message)}). Retrying (${retryCount}/${EVAL_MAX_CONSECUTIVE_ERRORS})...`;
+          }
+          const backoffMs = EVAL_POLL_INTERVAL_MS * retryCount;
+          currentEvaluationState.timeoutHandle = setTimeout(() => {
+            pollEvaluation(activeRunId);
+          }, backoffMs);
+          return;
+        }
+
+        // Exceeded consecutive retries: halt polling
+        const badge = document.getElementById('eval-run-badge');
+        if (badge) {
+          badge.className = 'px-2 py-0.5 rounded-full text-xs font-mono bg-rose-500/20 text-rose-300 ring-1 ring-rose-500/40';
+          badge.textContent = 'POLL ERROR';
+        }
+        if (desc) {
+          desc.textContent = `Polling halted after ${EVAL_MAX_CONSECUTIVE_ERRORS} failed attempts: ${escapeHtml(pollErr.message)}`;
+        }
+        resetEvaluationWorkflow(false);
+      }
+    }
+
+    function renderEvaluationResults(results) {
+      const container = document.getElementById('eval-results-container');
+      if (!container) return;
+      container.innerHTML = `
+        <div class="doppelrand-shell">
+          <div class="doppelrand-core p-6 space-y-3">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-gray-300">Test Execution Ledger (${results.length} Assertions)</h4>
+            ${results.map(r => `
+              <div class="p-3.5 bg-oled-950/70 border border-white/[0.04] rounded-xl text-xs space-y-1">
+                <div class="flex justify-between items-center">
+                  <span class="font-bold text-gray-200 font-mono">Prompt: "${escapeHtml(r.prompt_text || 'Test')}"</span>
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-mono ring-1 ${r.passed ? 'text-emerald-400 bg-emerald-500/10 ring-emerald-500/30' : 'text-rose-400 bg-rose-500/10 ring-rose-500/30'}">
+                    ${r.passed ? 'PASSED' : 'FAILED'}
+                  </span>
+                </div>
+                <div class="text-gray-300 font-mono bg-oled-900/80 p-2 rounded text-[11px] whitespace-pre-wrap">Output: "${escapeHtml(r.raw_output || '')}"</div>
+                <div class="text-gray-500 text-[10px] font-mono flex gap-4 pt-1">
+                  <span>Latency: ${(r.latency_ms ?? 0).toFixed(0)}ms</span>
+                  <span>Tokens: ${escapeHtml(r.completion_tokens ?? 0)}</span>
                 </div>
               </div>
-            `;
-          }
-        }, 2000);
-      } catch (e) {
-        alert("Evaluation submission failed: " + e);
-      }
+            `).join('')}
+          </div>
+        </div>
+      `;
     }
 
     // Run Adversarial Security Scan
@@ -776,10 +1151,10 @@
 
       radar.classList.remove('hidden');
       btn.disabled = true;
-      btnText.textContent = `Running ${currentSecurityEngine.toUpperCase()} Scan...`;
+      btnText.textContent = `Running ${escapeHtml(currentSecurityEngine.toUpperCase())} Scan...`;
 
       try {
-        const res = await fetch('/api/v1/security/scan', {
+        const report = await apiCall('/api/v1/security/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -788,10 +1163,9 @@
             num_predict: 512
           })
         });
-        const report = (await res.json()).data;
         renderSecurityReport(report);
       } catch (e) {
-        alert("Security scan failed: " + e);
+        alert("Security scan failed: " + e.message);
       } finally {
         radar.classList.add('hidden');
         btn.disabled = false;
@@ -801,7 +1175,8 @@
 
     function renderSecurityReport(rep) {
       const container = document.getElementById('security-results-container');
-      const ratePct = (rep.defense_rate * 100).toFixed(0);
+      if (!rep || !container) return;
+      const ratePct = ((rep.defense_rate ?? 0) * 100).toFixed(0);
 
       container.innerHTML = `
         <div class="space-y-6">
@@ -809,18 +1184,18 @@
             <div class="doppelrand-shell">
               <div class="doppelrand-core p-4">
                 <div class="text-[11px] font-mono text-gray-500">TARGET MODEL</div>
-                <div class="text-base font-bold text-white font-mono mt-1">${rep.model_id}</div>
-                <div class="text-[11px] text-cyan-400 font-mono mt-1">ENGINE: ${rep.engine_used.toUpperCase()}</div>
+                <div class="text-base font-bold text-white font-mono mt-1">${escapeHtml(rep.model_id)}</div>
+                <div class="text-[11px] text-cyan-400 font-mono mt-1">ENGINE: ${escapeHtml((rep.engine_used || '').toUpperCase())}</div>
               </div>
             </div>
 
             <div class="doppelrand-shell">
               <div class="doppelrand-core p-4">
                 <div class="text-[11px] font-mono text-gray-500">DEFENSE RATE</div>
-                <div class="text-2xl font-bold font-mono mt-1 ${rep.defense_rate >= 0.8 ? 'text-emerald-400' : rep.defense_rate >= 0.5 ? 'text-amber-400' : 'text-rose-400'}">
+                <div class="text-2xl font-bold font-mono mt-1 ${(rep.defense_rate ?? 0) >= 0.8 ? 'text-emerald-400' : (rep.defense_rate ?? 0) >= 0.5 ? 'text-amber-400' : 'text-rose-400'}">
                   ${ratePct}%
                 </div>
-                <div class="text-[11px] text-gray-400 font-mono mt-1">${rep.defended_attacks} / ${rep.total_attacks} Defended</div>
+                <div class="text-[11px] text-gray-400 font-mono mt-1">${escapeHtml(rep.defended_attacks ?? 0)} / ${escapeHtml(rep.total_attacks ?? 0)} Defended</div>
               </div>
             </div>
 
@@ -828,7 +1203,7 @@
               <div class="doppelrand-core p-4">
                 <div class="text-[11px] font-mono text-gray-500">RISK LEVEL</div>
                 <div class="text-2xl font-bold font-mono mt-1 ${rep.risk_level === 'LOW' ? 'text-emerald-400' : rep.risk_level === 'MEDIUM' ? 'text-amber-400' : 'text-rose-400'}">
-                  ${rep.risk_level}
+                  ${escapeHtml(rep.risk_level || 'UNKNOWN')}
                 </div>
                 <div class="text-[11px] text-gray-400 font-mono mt-1">Automated Scorecard</div>
               </div>
@@ -837,7 +1212,7 @@
             <div class="doppelrand-shell">
               <div class="doppelrand-core p-4">
                 <div class="text-[11px] font-mono text-gray-500">EVALUATION TIME</div>
-                <div class="text-base font-bold text-gray-200 font-mono mt-1">${new Date(rep.generated_at).toLocaleTimeString()}</div>
+                <div class="text-base font-bold text-gray-200 font-mono mt-1">${rep.generated_at ? new Date(rep.generated_at).toLocaleTimeString() : 'N/A'}</div>
                 <div class="text-[11px] text-emerald-400 font-mono mt-1">● Air-Gapped Local</div>
               </div>
             </div>
@@ -846,33 +1221,29 @@
           <div class="doppelrand-shell">
             <div class="doppelrand-core p-6 space-y-4">
               <h3 class="text-sm font-bold text-gray-100 border-b border-white/[0.06] pb-3">
-                Adversarial Probes Breakdown (${rep.attack_details.length} Probes)
+                Adversarial Probes Breakdown (${escapeHtml((rep.attack_details || []).length)} Probes)
               </h3>
               <div class="space-y-3">
-                ${rep.attack_details.map((atk, idx) => `
+                ${(rep.attack_details || []).map((atk) => `
                   <div class="p-4 rounded-xl bg-oled-950/70 border border-white/[0.06] space-y-2">
                     <div class="flex justify-between items-center">
                       <div class="flex items-center space-x-2">
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-white/5 text-gray-300 ring-1 ring-white/10">[${atk.category}]</span>
-                        <span class="text-xs font-bold text-gray-200 font-mono">${atk.attack_vector}</span>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-white/5 text-gray-300 ring-1 ring-white/10">[${escapeHtml(atk.category || 'UNKNOWN')}]</span>
+                        <span class="text-xs font-bold text-gray-200 font-mono">${escapeHtml(atk.attack_vector || '')}</span>
                       </div>
                       <span class="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ring-1 ${atk.defended ? 'text-emerald-400 bg-emerald-500/10 ring-emerald-500/30' : 'text-rose-400 bg-rose-500/10 ring-rose-500/30'}">
                         ${atk.defended ? '● DEFENDED' : '■ VULNERABLE'}
                       </span>
                     </div>
-                    <div class="text-xs font-mono text-gray-400">Prompt: "${atk.prompt}"</div>
-                    <div class="p-2.5 rounded-lg bg-oled-900/90 border border-white/[0.04] text-xs font-mono ${atk.defended ? 'text-gray-300' : 'text-rose-300 font-semibold'}">
-                      Response: "${atk.model_response || '[Empty Response]'}"
-                    </div>
+                    <div class="text-xs font-mono text-gray-400">Prompt: "${escapeHtml(atk.prompt || '')}"</div>
+                    <div class="p-2.5 rounded-lg bg-oled-900/90 border border-white/[0.04] text-xs font-mono ${atk.defended ? 'text-gray-300' : 'text-rose-300 font-semibold'} whitespace-pre-wrap">Response: "${escapeHtml(atk.model_response || '[Empty Response]')}"</div>
                     ${atk.thinking_preview ? `
                       <details class="text-[11px] font-mono text-gray-400 pt-1 cursor-pointer">
                         <summary class="text-cyan-400 hover:underline">Inspect Internal Reasoning Trace (&lt;think&gt;)</summary>
-                        <div class="mt-2 p-2.5 rounded bg-oled-900/60 border border-white/[0.04] whitespace-pre-wrap text-gray-300">
-                          ${atk.thinking_preview}
-                        </div>
+                        <div class="mt-2 p-2.5 rounded bg-oled-900/60 border border-white/[0.04] whitespace-pre-wrap text-gray-300 font-mono text-[11px]">${escapeHtml(atk.thinking_preview)}</div>
                       </details>
                     ` : ''}
-                    <div class="text-[11px] text-gray-500 pt-1">Verdict Reason: ${atk.reason}</div>
+                    <div class="text-[11px] text-gray-500 pt-1">Verdict Reason: ${escapeHtml(atk.reason || '')}</div>
                   </div>
                 `).join('')}
               </div>
@@ -892,7 +1263,7 @@
       btnText.textContent = 'Evaluating Triad...';
 
       try {
-        const res = await fetch('/api/v1/rag/evaluate', {
+        const rep = await apiCall('/api/v1/rag/evaluate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -906,7 +1277,6 @@
             ]
           })
         });
-        const rep = (await res.json()).data;
         const container = document.getElementById('rag-results-container');
         container.innerHTML = `
           <div class="space-y-6">
@@ -914,28 +1284,28 @@
               <div class="doppelrand-shell">
                 <div class="doppelrand-core p-4">
                   <div class="text-[11px] font-mono text-gray-500">CONTEXT RELEVANCE</div>
-                  <div class="text-2xl font-bold text-cyan-400 font-mono mt-1">${(rep.avg_context_relevance * 100).toFixed(0)}%</div>
+                  <div class="text-2xl font-bold text-cyan-400 font-mono mt-1">${((rep.avg_context_relevance ?? 0) * 100).toFixed(0)}%</div>
                   <div class="text-[11px] text-gray-400 font-mono mt-1">Cosine Query ↔ Chunk</div>
                 </div>
               </div>
               <div class="doppelrand-shell">
                 <div class="doppelrand-core p-4">
                   <div class="text-[11px] font-mono text-gray-500">ANSWER FAITHFULNESS</div>
-                  <div class="text-2xl font-bold text-emerald-400 font-mono mt-1">${(rep.avg_faithfulness * 100).toFixed(0)}%</div>
+                  <div class="text-2xl font-bold text-emerald-400 font-mono mt-1">${((rep.avg_faithfulness ?? 0) * 100).toFixed(0)}%</div>
                   <div class="text-[11px] text-gray-400 font-mono mt-1">Grounded in Context</div>
                 </div>
               </div>
               <div class="doppelrand-shell">
                 <div class="doppelrand-core p-4">
                   <div class="text-[11px] font-mono text-gray-500">ANSWER RELEVANCE</div>
-                  <div class="text-2xl font-bold text-purple-400 font-mono mt-1">${(rep.avg_answer_relevance * 100).toFixed(0)}%</div>
+                  <div class="text-2xl font-bold text-purple-400 font-mono mt-1">${((rep.avg_answer_relevance ?? 0) * 100).toFixed(0)}%</div>
                   <div class="text-[11px] text-gray-400 font-mono mt-1">Direct Intent Alignment</div>
                 </div>
               </div>
               <div class="doppelrand-shell">
                 <div class="doppelrand-core p-4">
                   <div class="text-[11px] font-mono text-gray-500">TRIAD COMPOSITE</div>
-                  <div class="text-2xl font-bold text-white font-mono mt-1">${(rep.rag_triad_score * 100).toFixed(0)}%</div>
+                  <div class="text-2xl font-bold text-white font-mono mt-1">${((rep.rag_triad_score ?? 0) * 100).toFixed(0)}%</div>
                   <div class="text-[11px] text-cyan-400 font-mono mt-1">Harmonic Reliability</div>
                 </div>
               </div>
@@ -945,20 +1315,20 @@
               <div class="doppelrand-core p-6 space-y-4">
                 <h3 class="text-sm font-bold text-gray-100 border-b border-white/[0.06] pb-3">Evaluated Retrieval & Answers</h3>
                 <div class="space-y-3">
-                  ${rep.query_evaluations.map((q, idx) => `
+                  ${(rep.query_evaluations || []).map((q, idx) => `
                     <div class="p-4 rounded-xl bg-oled-950/70 border border-white/[0.06] text-xs font-mono space-y-2">
                       <div class="flex justify-between items-center text-gray-200 font-bold">
-                        <span>Query #${idx + 1}: "${q.query}"</span>
+                        <span>Query #${idx + 1}: "${escapeHtml(q.query)}"</span>
                         <div class="flex space-x-3 text-[11px]">
-                          <span class="text-cyan-400">Relevance: ${(q.context_relevance * 100).toFixed(0)}%</span>
-                          <span class="text-emerald-400">Faithfulness: ${(q.faithfulness * 100).toFixed(0)}%</span>
+                          <span class="text-cyan-400">Relevance: ${((q.context_relevance ?? 0) * 100).toFixed(0)}%</span>
+                          <span class="text-emerald-400">Faithfulness: ${((q.faithfulness ?? 0) * 100).toFixed(0)}%</span>
                         </div>
                       </div>
                       <div class="text-gray-400 bg-oled-900/60 p-2.5 rounded-lg border border-white/[0.04]">
-                        <span class="text-gray-500">Retrieved: </span>${q.retrieved_chunk}
+                        <span class="text-gray-500">Retrieved: </span>${escapeHtml(q.retrieved_chunk || '')}
                       </div>
-                      <div class="text-gray-200 bg-oled-900/90 p-2.5 rounded-lg border border-white/[0.06]">
-                        <span class="text-cyan-400">Answer: </span>"${q.generated_answer}"
+                      <div class="text-gray-200 bg-oled-900/90 p-2.5 rounded-lg border border-white/[0.06] whitespace-pre-wrap">
+                        <span class="text-cyan-400">Answer: </span>"${escapeHtml(q.generated_answer || '')}"
                       </div>
                     </div>
                   `).join('')}
@@ -968,88 +1338,185 @@
           </div>
         `;
       } catch (e) {
-        alert("RAG evaluation failed: " + e);
+        alert("RAG evaluation failed: " + e.message);
       } finally {
         btn.disabled = false;
         btnText.textContent = 'Run RAG Triad Evaluation';
       }
     }
 
-    // Load Rankings & Pareto
+    // Load Rankings & Real Pareto Frontier
     async function loadRankings() {
       try {
-        const res = await fetch('/api/v1/analytics/rankings');
-        const data = (await res.json()).data;
-        const tbody = document.getElementById('rankings-table-body');
-        tbody.innerHTML = '';
-        data.rankings.forEach(r => {
-          const row = document.createElement('tr');
-          row.className = 'hover:bg-white/[0.02] transition-colors';
-          row.innerHTML = `
-            <td class="py-3 font-bold text-cyan-400">#${r.rank}</td>
-            <td class="font-semibold text-gray-200">${r.model_id}</td>
-            <td class="text-white font-bold">${r.composite_score}</td>
-            <td class="text-emerald-400">${(r.accuracy_score * 100).toFixed(0)}%</td>
-            <td class="text-rose-400">${(r.security_score * 100).toFixed(0)}%</td>
-            <td class="text-cyan-400">${r.tokens_per_sec} t/s</td>
-            <td class="text-gray-400">${r.vram_used_mb} MB</td>
-          `;
-          tbody.appendChild(row);
-        });
+        const data = await apiCall('/api/v1/analytics/rankings');
+        if (data && data.rankings) {
+          const tbody = document.getElementById('rankings-table-body');
+          tbody.innerHTML = '';
+          data.rankings.forEach(r => {
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-white/[0.02] transition-colors';
+            row.innerHTML = `
+              <td class="py-3 font-bold text-cyan-400">#${escapeHtml(r.rank)}</td>
+              <td class="font-semibold text-gray-200">${escapeHtml(r.model_id)}</td>
+              <td class="text-white font-bold">${escapeHtml(r.composite_score)}</td>
+              <td class="text-emerald-400">${((r.accuracy_score ?? 0) * 100).toFixed(0)}%</td>
+              <td class="text-rose-400">${((r.security_score ?? 0) * 100).toFixed(0)}%</td>
+              <td class="text-cyan-400">${escapeHtml(r.tokens_per_sec)} t/s</td>
+              <td class="text-gray-400">${escapeHtml(r.vram_used_mb)} MB</td>
+            `;
+            tbody.appendChild(row);
+          });
+        }
+      } catch (e) {
+        console.warn('Analytics rankings notice:', e.message);
+      }
 
-        const paretoDiv = document.getElementById('pareto-cards');
-        paretoDiv.innerHTML = `
-          <div class="doppelrand-shell">
-            <div class="doppelrand-core p-5 space-y-3">
-              <div class="flex justify-between items-center text-xs font-mono">
-                <span class="font-bold text-gray-100">llama3.2:latest</span>
-                <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30 font-semibold">PARETO OPTIMAL</span>
-              </div>
-              <div class="space-y-1 text-xs font-mono text-gray-400">
-                <div class="flex justify-between"><span>Throughput:</span><span class="text-cyan-400 font-bold">109.3 t/s</span></div>
-                <div class="flex justify-between"><span>Accuracy:</span><span class="text-emerald-400 font-bold">92%</span></div>
-                <div class="flex justify-between"><span>Memory:</span><span class="text-gray-300">2.2 GB VRAM</span></div>
-              </div>
-              <p class="text-[11px] text-gray-500 pt-2 border-t border-white/[0.04]">Fastest 3B throughput. Runs completely in GPU VRAM.</p>
-            </div>
-          </div>
-
-          <div class="doppelrand-shell">
-            <div class="doppelrand-core p-5 space-y-3">
-              <div class="flex justify-between items-center text-xs font-mono">
-                <span class="font-bold text-gray-100">qwen3:4b</span>
-                <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30 font-semibold">PARETO OPTIMAL</span>
-              </div>
-              <div class="space-y-1 text-xs font-mono text-gray-400">
-                <div class="flex justify-between"><span>Throughput:</span><span class="text-cyan-400 font-bold">41.9 t/s</span></div>
-                <div class="flex justify-between"><span>Accuracy:</span><span class="text-emerald-400 font-bold">91%</span></div>
-                <div class="flex justify-between"><span>Memory:</span><span class="text-gray-300">2.5 GB VRAM</span></div>
-              </div>
-              <p class="text-[11px] text-gray-500 pt-2 border-t border-white/[0.04]">Balanced reasoning generation rate and precision.</p>
-            </div>
-          </div>
-
-          <div class="doppelrand-shell">
-            <div class="doppelrand-core p-5 space-y-3">
-              <div class="flex justify-between items-center text-xs font-mono">
-                <span class="font-bold text-gray-100">qwen3:8b</span>
-                <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30 font-semibold">PARETO OPTIMAL</span>
-              </div>
-              <div class="space-y-1 text-xs font-mono text-gray-400">
-                <div class="flex justify-between"><span>Throughput:</span><span class="text-cyan-400 font-bold">14.7 t/s</span></div>
-                <div class="flex justify-between"><span>Accuracy:</span><span class="text-emerald-400 font-bold">94%</span></div>
-                <div class="flex justify-between"><span>Memory:</span><span class="text-gray-300">2.2GB GPU + 3.5GB RAM</span></div>
-              </div>
-              <p class="text-[11px] text-gray-500 pt-2 border-t border-white/[0.04]">Highest deductive reasoning depth.</p>
-            </div>
-          </div>
-        `;
-      } catch (e) { console.error(e); }
+      // Fetch genuinely persisted benchmark reports from /api/v1/benchmarks
+      await loadBenchmarks();
     }
 
-    // Startup Init
-    updateTelemetry();
-    setInterval(updateTelemetry, 3000);
+    async function loadBenchmarks() {
+      const paretoDiv = document.getElementById('pareto-cards');
+      const peakSpeedEl = document.getElementById('overview-peak-speed');
+      const peakModelEl = document.getElementById('overview-peak-model');
+      const peakStatusEl = document.getElementById('overview-peak-status');
+      const paretoCountEl = document.getElementById('overview-pareto-count');
+
+      try {
+        const reports = (await apiCall('/api/v1/benchmarks')) || [];
+        const latestReport = reports.length > 0 ? reports[0] : null;
+
+        if (!latestReport || !latestReport.results || latestReport.results.length === 0) {
+          // Empty state: no real empirical benchmark reports compiled yet
+          if (peakSpeedEl) peakSpeedEl.innerHTML = `— <span class="text-xs text-gray-400 font-sans font-normal">t/s</span>`;
+          if (peakModelEl) peakModelEl.textContent = 'No Benchmark Reports';
+          if (peakStatusEl) {
+            peakStatusEl.className = 'text-gray-500';
+            peakStatusEl.textContent = 'Unmeasured';
+          }
+          if (paretoCountEl) paretoCountEl.innerHTML = `0 <span class="text-xs text-gray-400 font-sans font-normal">Models</span>`;
+
+          if (paretoDiv) {
+            paretoDiv.innerHTML = `
+              <div class="col-span-full p-6 rounded-xl bg-oled-950/80 border border-white/[0.06] text-center space-y-3">
+                <div class="w-10 h-10 rounded-full bg-cyan-500/10 text-cyan-400 flex items-center justify-center mx-auto text-lg font-mono">📊</div>
+                <h3 class="text-sm font-bold text-gray-200">No Empirical Benchmark Reports Compiled</h3>
+                <p class="text-xs text-gray-400 max-w-md mx-auto">
+                  Pareto frontier and speed metrics are generated strictly from verified evaluation runs. No synthetic values are displayed.
+                </p>
+                <div class="pt-2">
+                  <button onclick="switchTab('evaluations')" class="island-btn bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs">
+                    <span>Execute First Evaluation Suite →</span>
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+          return;
+        }
+
+        // We have genuine benchmark results!
+        const validScores = (latestReport.results || []).filter(r => r.status === 'BENCHMARKED' && r.speed_tokens_sec !== null);
+        const paretoFrontier = latestReport.pareto_frontier || [];
+
+        // Update Overview peak speed card
+        if (validScores.length > 0) {
+          const fastest = [...validScores].sort((a, b) => (b.speed_tokens_sec || 0) - (a.speed_tokens_sec || 0))[0];
+          if (peakSpeedEl) peakSpeedEl.innerHTML = `${(fastest.speed_tokens_sec || 0).toFixed(1)} <span class="text-xs text-gray-400 font-sans font-normal">t/s</span>`;
+          if (peakModelEl) peakModelEl.textContent = fastest.model_id;
+          if (peakStatusEl) {
+            peakStatusEl.className = 'text-emerald-400 font-mono text-[11px]';
+            peakStatusEl.textContent = fastest.gpu_name ? `${escapeHtml(fastest.gpu_name)}` : 'Empirical Run';
+          }
+        }
+
+        if (paretoCountEl) {
+          paretoCountEl.innerHTML = `${paretoFrontier.length} <span class="text-xs text-gray-400 font-sans font-normal">Models</span>`;
+        }
+
+        // Render genuine Pareto Optimal model cards
+        if (paretoDiv) {
+          paretoDiv.innerHTML = '';
+          if (paretoFrontier.length === 0) {
+            paretoDiv.innerHTML = `
+              <div class="col-span-full p-4 rounded-xl bg-oled-950/80 border border-white/[0.06] text-xs font-mono text-gray-400">
+                Report '${escapeHtml(latestReport.title)}' has evaluated models, but no non-dominated Pareto points were identified.
+              </div>
+            `;
+          } else {
+            paretoFrontier.forEach(pt => {
+              const card = document.createElement('div');
+              card.className = 'doppelrand-shell';
+              const cardCore = document.createElement('div');
+              cardCore.className = 'doppelrand-core p-5 space-y-3';
+
+              const header = document.createElement('div');
+              header.className = 'flex justify-between items-center text-xs font-mono';
+              header.innerHTML = `
+                <span class="font-bold text-gray-100">${escapeHtml(pt.model_id)}</span>
+                <span class="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30 font-semibold">PARETO OPTIMAL</span>
+              `;
+              cardCore.appendChild(header);
+
+              const metrics = document.createElement('div');
+              metrics.className = 'space-y-1 text-xs font-mono text-gray-400';
+              const accDisplay = pt.accuracy_score !== null ? `${(pt.accuracy_score * 100).toFixed(0)}%` : 'N/A';
+              const speedDisplay = pt.speed_tokens_sec !== null ? `${pt.speed_tokens_sec.toFixed(1)} t/s` : 'N/A';
+              metrics.innerHTML = `
+                <div class="flex justify-between"><span>Throughput:</span><span class="text-cyan-400 font-bold">${speedDisplay}</span></div>
+                <div class="flex justify-between"><span>Accuracy:</span><span class="text-emerald-400 font-bold">${accDisplay}</span></div>
+              `;
+              cardCore.appendChild(metrics);
+
+              const footer = document.createElement('p');
+              footer.className = 'text-[11px] text-gray-500 pt-2 border-t border-white/[0.04] font-mono';
+              footer.textContent = `Report: ${latestReport.title || 'Empirical Benchmark'}`;
+              cardCore.appendChild(footer);
+
+              card.appendChild(cardCore);
+              paretoDiv.appendChild(card);
+            });
+          }
+        }
+
+      } catch (benchErr) {
+        console.warn('Benchmark reports fetch notice:', benchErr.message);
+        if (paretoDiv) {
+          paretoDiv.innerHTML = `
+            <div class="col-span-full p-4 rounded-xl bg-oled-950/80 border border-white/[0.06] text-xs font-mono text-amber-400">
+              Notice: Unable to retrieve benchmark reports (${escapeHtml(benchErr.message)}).
+            </div>
+          `;
+        }
+      }
+    }
+
+    // Startup Init with Visibility-Aware Telemetry Polling
+    let telemetryTimer = null;
+
+    function startTelemetryPolling() {
+      if (!telemetryTimer) {
+        updateTelemetry();
+        telemetryTimer = setInterval(updateTelemetry, 3000);
+      }
+    }
+
+    function stopTelemetryPolling() {
+      if (telemetryTimer) {
+        clearInterval(telemetryTimer);
+        telemetryTimer = null;
+      }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stopTelemetryPolling();
+      } else {
+        startTelemetryPolling();
+      }
+    });
+
+    startTelemetryPolling();
     loadModels();
     loadDatasets();
     loadRankings();
