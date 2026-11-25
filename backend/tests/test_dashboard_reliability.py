@@ -543,7 +543,7 @@ def test_dashboard_xss_prevention_and_api_helpers():
                 results.speedDashed = peakSpeedText.includes('—');
                 results.noSyntheticLlama = !peakModelText.includes('Llama 3.2 (3B)');
 
-                // 10B: Real benchmark reports returned from /api/v1/benchmarks
+                // 10B: Real benchmark reports returned from /api/v1/benchmarks using exact ParetoPoint schema
                 window.fetch = async (url) => {
                     const u = String(url);
                     if (u.includes('/api/v1/analytics/rankings')) {
@@ -565,10 +565,25 @@ def test_dashboard_xss_prevention_and_api_helpers():
                                         id: "rep-real-1",
                                         title: "Empirical Qwen vs Llama Run",
                                         results: [
-                                            { model_id: "qwen2.5:3b", status: "BENCHMARKED", speed_tokens_sec: 48.2, accuracy_score: 0.91, gpu_name: "RTX 3050" }
+                                            {
+                                                model_id: "qwen2.5:3b",
+                                                run_id: "run-real-1",
+                                                status: "BENCHMARKED",
+                                                speed_tokens_sec: 48.2,
+                                                accuracy_score: 0.91,
+                                                peak_vram_mb: 2450.0,
+                                                gpu_name: "RTX 3050"
+                                            }
                                         ],
                                         pareto_frontier: [
-                                            { model_id: "qwen2.5:3b", speed_tokens_sec: 48.2, accuracy_score: 0.91 }
+                                            {
+                                                model_id: "qwen2.5:3b",
+                                                run_id: "run-real-1",
+                                                tokens_per_sec: 48.2,
+                                                accuracy_rate: 0.91,
+                                                peak_vram_mb: 2450.0,
+                                                is_pareto_optimal: true
+                                            }
                                         ]
                                     }
                                 ]
@@ -582,10 +597,80 @@ def test_dashboard_xss_prevention_and_api_helpers():
                 const realParetoHtml = document.getElementById('pareto-cards')?.innerHTML;
                 const realPeakSpeed = document.getElementById('overview-peak-speed')?.textContent;
                 const realPeakModel = document.getElementById('overview-peak-model')?.textContent;
+                const realPeakStatus = document.getElementById('overview-peak-status')?.textContent;
 
-                results.rendersRealParetoCard = realParetoHtml.includes('qwen2.5:3b') && realParetoHtml.includes('48.2 t/s');
+                results.rendersRealParetoCard = realParetoHtml.includes('qwen2.5:3b') && realParetoHtml.includes('48.2 t/s') && realParetoHtml.includes('91%');
+                results.noNaNInRealCard = !realParetoHtml.includes('NaN') && !realParetoHtml.includes('undefined');
                 results.realPeakSpeedUpdated = realPeakSpeed.includes('48.2');
                 results.realPeakModelUpdated = (realPeakModel === 'qwen2.5:3b');
+                results.realHardwareProvenance = (realPeakStatus === 'RTX 3050');
+
+                // 10C: Null, missing, and non-finite metrics on ParetoPoint render 'N/A' and never '0' or 'NaN'
+                window.fetch = async (url) => {
+                    const u = String(url);
+                    if (u.includes('/api/v1/analytics/rankings')) {
+                        return {
+                            ok: true,
+                            status: 200,
+                            headers: new Headers({ 'content-type': 'application/json' }),
+                            json: async () => ({ success: true, data: { rankings: [] } })
+                        };
+                    } else if (u.includes('/api/v1/benchmarks')) {
+                        return {
+                            ok: true,
+                            status: 200,
+                            headers: new Headers({ 'content-type': 'application/json' }),
+                            json: async () => ({
+                                success: true,
+                                data: [
+                                    {
+                                        id: "rep-invalid-metrics",
+                                        title: "Partial Metrics Report",
+                                        results: [
+                                            {
+                                                model_id: "test-null-model",
+                                                run_id: "run-null-1",
+                                                status: "BENCHMARKED",
+                                                speed_tokens_sec: null,
+                                                accuracy_score: null
+                                            }
+                                        ],
+                                        pareto_frontier: [
+                                            {
+                                                model_id: "test-null-model",
+                                                run_id: "run-null-1",
+                                                tokens_per_sec: null,
+                                                accuracy_rate: null,
+                                                peak_vram_mb: 1024.0,
+                                                is_pareto_optimal: true
+                                            },
+                                            {
+                                                model_id: "test-missing-model",
+                                                run_id: "run-missing-1",
+                                                is_pareto_optimal: true
+                                            },
+                                            {
+                                                model_id: "test-nonfinite-model",
+                                                run_id: "run-nonfinite-1",
+                                                tokens_per_sec: "not-a-number",
+                                                accuracy_rate: 0,
+                                                peak_vram_mb: 1024.0,
+                                                is_pareto_optimal: true
+                                            }
+                                        ]
+                                    }
+                                ]
+                            })
+                        };
+                    }
+                    return { ok: false, status: 404, headers: new Headers() };
+                };
+
+                await loadRankings();
+                const invalidParetoHtml = document.getElementById('pareto-cards')?.innerHTML;
+                results.invalidMetricsNoNaN = !invalidParetoHtml.includes('NaN') && !invalidParetoHtml.includes('undefined');
+                results.invalidMetricsShowNA = (invalidParetoHtml.match(/N\\/A/g) || []).length === 5;
+                results.genuineZeroAccuracyPreserved = invalidParetoHtml.includes('0%');
 
                 window.fetch = originalFetch;
                 return results;
@@ -597,7 +682,12 @@ def test_dashboard_xss_prevention_and_api_helpers():
         assert pareto_integrity_results["speedDashed"] is True, "Peak speed was not set to unmeasured dash"
         assert pareto_integrity_results["noSyntheticLlama"] is True, "Synthetic 'Llama 3.2 (3B)' card was still present"
         assert pareto_integrity_results["rendersRealParetoCard"] is True, "Real Pareto card was not rendered from /api/v1/benchmarks"
+        assert pareto_integrity_results["noNaNInRealCard"] is True, "Real Pareto card rendered NaN or undefined"
         assert pareto_integrity_results["realPeakSpeedUpdated"] is True, "Peak speed did not update from real benchmark"
         assert pareto_integrity_results["realPeakModelUpdated"] is True, "Peak model did not update to real benchmark model"
+        assert pareto_integrity_results["realHardwareProvenance"] is True, "Hardware provenance GPU name was not preserved"
+        assert pareto_integrity_results["invalidMetricsNoNaN"] is True, "Null/missing/non-finite Pareto metrics rendered NaN or undefined"
+        assert pareto_integrity_results["invalidMetricsShowNA"] is True, "Null/missing/non-finite Pareto metrics did not render expected N/A count"
+        assert pareto_integrity_results["genuineZeroAccuracyPreserved"] is True, "Genuine 0 accuracy was not preserved as 0%"
 
         browser.close()

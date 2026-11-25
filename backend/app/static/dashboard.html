@@ -1416,17 +1416,19 @@
         }
 
         // We have genuine benchmark results!
-        const validScores = (latestReport.results || []).filter(r => r.status === 'BENCHMARKED' && r.speed_tokens_sec !== null);
+        const validScores = (latestReport.results || []).filter(
+          r => r.status === 'BENCHMARKED' && typeof r.speed_tokens_sec === 'number' && Number.isFinite(r.speed_tokens_sec)
+        );
         const paretoFrontier = latestReport.pareto_frontier || [];
 
         // Update Overview peak speed card
         if (validScores.length > 0) {
-          const fastest = [...validScores].sort((a, b) => (b.speed_tokens_sec || 0) - (a.speed_tokens_sec || 0))[0];
-          if (peakSpeedEl) peakSpeedEl.innerHTML = `${(fastest.speed_tokens_sec || 0).toFixed(1)} <span class="text-xs text-gray-400 font-sans font-normal">t/s</span>`;
+          const fastest = [...validScores].sort((a, b) => b.speed_tokens_sec - a.speed_tokens_sec)[0];
+          if (peakSpeedEl) peakSpeedEl.innerHTML = `${fastest.speed_tokens_sec.toFixed(1)} <span class="text-xs text-gray-400 font-sans font-normal">t/s</span>`;
           if (peakModelEl) peakModelEl.textContent = fastest.model_id;
           if (peakStatusEl) {
             peakStatusEl.className = 'text-emerald-400 font-mono text-[11px]';
-            peakStatusEl.textContent = fastest.gpu_name ? `${escapeHtml(fastest.gpu_name)}` : 'Empirical Run';
+            peakStatusEl.textContent = fastest.gpu_name ? fastest.gpu_name : 'Empirical Run';
           }
         }
 
@@ -1460,8 +1462,10 @@
 
               const metrics = document.createElement('div');
               metrics.className = 'space-y-1 text-xs font-mono text-gray-400';
-              const accDisplay = pt.accuracy_score !== null ? `${(pt.accuracy_score * 100).toFixed(0)}%` : 'N/A';
-              const speedDisplay = pt.speed_tokens_sec !== null ? `${pt.speed_tokens_sec.toFixed(1)} t/s` : 'N/A';
+              const accVal = typeof pt.accuracy_rate === 'number' && Number.isFinite(pt.accuracy_rate) ? pt.accuracy_rate : null;
+              const speedVal = typeof pt.tokens_per_sec === 'number' && Number.isFinite(pt.tokens_per_sec) ? pt.tokens_per_sec : null;
+              const accDisplay = accVal !== null ? `${(accVal * 100).toFixed(0)}%` : 'N/A';
+              const speedDisplay = speedVal !== null ? `${speedVal.toFixed(1)} t/s` : 'N/A';
               metrics.innerHTML = `
                 <div class="flex justify-between"><span>Throughput:</span><span class="text-cyan-400 font-bold">${speedDisplay}</span></div>
                 <div class="flex justify-between"><span>Accuracy:</span><span class="text-emerald-400 font-bold">${accDisplay}</span></div>
