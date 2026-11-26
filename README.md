@@ -5,7 +5,7 @@
 [![SQLite WAL](https://img.shields.io/badge/SQLite-WAL%20Mode-003B57.svg)](https://www.sqlite.org/wal.html)
 [![Promptfoo](https://img.shields.io/badge/Promptfoo-v0.126-orange.svg)](https://www.promptfoo.dev/)
 [![Ollama](https://img.shields.io/badge/Ollama-Local%20Inference-black.svg)](https://ollama.com/)
-[![Tests](https://img.shields.io/badge/Tests-68%20Backend%20%7C%205%20Frontend%20Passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-70%20Backend%20%7C%205%20Frontend%20Passing-brightgreen.svg)]()
 [![Pareto Frontier](https://img.shields.io/badge/Pareto%20Frontier-Empirical%20Live%20Wiring-cyan.svg)]()
 [![Hardware Verified](https://img.shields.io/badge/Hardware-RTX%203050%20(4GB)-76B900.svg)](https://www.nvidia.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -134,11 +134,9 @@ The platform features an automated adversarial red-teaming scanner supporting tw
 - **SQLite (WAL Mode):** Stores relational entities, configurations, execution runs, and scalar metrics with zero lock contention.
 - **Append-Only JSONL:** Detailed prompt inputs, model completions, reasoning traces (`<think>...</think>`), and raw assertion evaluations are streamed into `/data/runs/{run_id}.jsonl`.
 
-### 7. Dark-First Infrastructure Dashboard
-- **Embedded Web Dashboard:** Served directly by FastAPI at `http://127.0.0.1:8000/dashboard`.
-- Real-time CPU, RAM, and NVIDIA GPU VRAM progress meters.
-- Model registry explorer with one-click Ollama sync.
-- Interactive Red-Teaming scanner and RAG Triad visualizer.
+### 7. Dual-Surface Interactive Dashboards
+- **Embedded FastAPI Dashboard (`/dashboard`):** Self-contained dark-theme interface featuring real-time CPU, RAM, and NVIDIA GPU VRAM meters with `LIVE` / `STALE` / `DISCONNECTED` connection tracking, visibility-aware telemetry polling, dynamic Ollama model selection, XSS-hardened output rendering, bounded evaluation polling, and empirical Pareto cards (zero synthetic fallback data).
+- **React 19 + TypeScript Frontend (`/frontend`):** Full SPA featuring an interactive SVG Pareto Frontier (`ParetoChart.tsx`) with dataset-filtered reports, convex-hull frontier lines, hardware provenance badges (`gpu_name`, `gpu_source`), and side-by-side model comparison cards.
 
 ---
 
@@ -157,6 +155,13 @@ Empirically calibrated and benchmarked on **Intel Core i7-12700H** + **NVIDIA Ge
 | **`mxbai-embed-large:latest`** | Large | 669 MB | Full GPU | ~820 MB | 0 MB | **1024-dim** | **100% Context** | < 20 ms | High-Recall Embedding |
 
 > **Telemetry Provenance Note:** LocalLLM Guard strictly identifies **NVIDIA SMI** telemetry as system-wide allocated GPU memory (`peak_vram_mb`) and **Ollama `/api/ps`** telemetry as model resident weights (`peak_ollama_vram_mb`). Missing measurements remain `null` (`N/A`) and are never fabricated as zero.
+
+### Per-Model Empirical Takeaways (RTX 3050 4GB + 16GB RAM)
+- **`llama3.2:latest` (3B) — Speed & Efficiency Leader (Pareto Optimal):** Fits 100% in 4GB VRAM (~2,210 MB system GPU / ~2,000 MB Ollama weights, 0 MB host RAM paging), achieving **109.3 t/s** and **92.0%** instruction accuracy with ~110 ms average latency.
+- **`qwen3:4b` (4B) — Balanced Reasoning (Pareto Optimal):** Uses ~2,480 MB system GPU VRAM with ~1.1 GB host RAM paging, delivering **41.9 t/s** and **91.0%** accuracy while retaining internal `<think>` reasoning traces.
+- **`qwen3:8b` (8B) — Highest Accuracy / Quality Leader (Pareto Optimal):** Achieves the top **94.0%** accuracy at **14.7 t/s** (~680 ms latency) by splitting weights across ~2,520 MB GPU VRAM and ~3.5 GB host RAM.
+- **`qwen2.5:3b` (3B) & `qwen3:1.7b` (1.7B) — Dominated on Pareto Frontier:** Both fit 100% in GPU VRAM (**55.0 t/s @ 88.0%** and **70.0 t/s @ 82.0%** respectively) but are dominated by `llama3.2:latest` on both throughput and accuracy.
+- **`qwen3-embedding:0.6b` & `mxbai-embed-large:latest` — RAG Embedding Models:** Both run 100% in GPU VRAM (< 850 MB peak, < 20 ms latency) producing 1024-dimensional embeddings with **100% context retrieval** on the architectural RAG corpus.
 
 ---
 
@@ -279,7 +284,7 @@ LocalLLM-Guard/
 │   │   │   └── execution_worker.py  # Sequential background worker daemon
 │   │   ├── config.py                # Pydantic BaseSettings (.env loader)
 │   │   └── main.py                  # FastAPI factory & lifespan event manager
-│   └── tests/                       # 22 automated unit & integration tests
+│   └── tests/                       # 70 automated unit, integration, and browser reliability tests
 │
 ├── frontend/                        # Complete React + TypeScript + Vite + Tailwind source
 ├── data/                            # Local database, configs, and JSONL traces (git-ignored)
@@ -321,7 +326,7 @@ Launch your web browser to:
 - **Interactive Swagger API Docs:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ### 4. Run the Automated Test Suites
-Run the full backend test suite (68 tests across health, hardware telemetry, security classification, RAG, and live Pareto benchmarks):
+Run the full backend test suite (70 tests across health, hardware telemetry, security classification, RAG, live Pareto benchmarks, and dashboard reliability):
 ```powershell
 python -m pytest backend/tests/ -v
 ```
